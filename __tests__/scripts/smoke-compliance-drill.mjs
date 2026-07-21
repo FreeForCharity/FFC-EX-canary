@@ -34,7 +34,7 @@
 
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const ENGINE_WORKFLOW = join(REPO_ROOT, '.github', 'workflows', 'post-deploy-smoke.yml')
@@ -125,7 +125,15 @@ export function evaluateManifestIcons(manifest = {}, statusOf = () => 200) {
   const failures = []
   for (const icon of manifest.icons || []) {
     if (!icon?.src) continue
-    if (statusOf(icon.src) !== 200) {
+    // Normalize the src the way smoke-check.mjs does before resolving it, so
+    // the drill agrees with the engine on valid manifests: a bare `icon.png`
+    // becomes `/icon.png`; already-rooted paths and http(s) URLs pass through.
+    const resolved = icon.src.startsWith('http')
+      ? icon.src
+      : icon.src.startsWith('/')
+        ? icon.src
+        : `/${icon.src}`
+    if (statusOf(resolved) !== 200) {
       failures.push(`manifest icon ${icon.src} resolves`)
     }
   }
@@ -325,7 +333,9 @@ function formatReport({ ok, rows }) {
 }
 
 // Executed directly (node …/smoke-compliance-drill.mjs) -> print + exit code.
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// Compare via pathToFileURL so a relative argv[1] (repo-root invocation) still
+// matches import.meta.url, not just an already-absolute path.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   runDrill()
     .then((result) => {
       console.log(formatReport(result))
