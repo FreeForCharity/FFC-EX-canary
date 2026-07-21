@@ -92,6 +92,11 @@ jobs:
         uses: actions/upload-pages-artifact@v5
         with:
           path: ./out
+          # Include dot-entries (.well-known/, .nojekyll). The action defaults
+          # include-hidden-files to false, which adds --exclude=.[^/]* to its
+          # tar and silently drops every hidden file from the Pages artifact —
+          # making the canonical RFC 9116 /.well-known/security.txt 404 live.
+          include-hidden-files: true
 
   deploy:
     name: Deploy to GitHub Pages
