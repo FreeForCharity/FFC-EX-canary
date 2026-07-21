@@ -161,7 +161,8 @@ export function evaluateFailureMarkers(page = {}, env = {}) {
 // ---------------------------------------------------------------------------
 
 const HEALTHY_FOOTER = { tag: 'footer', hrefs: ['/privacy-policy', '/terms-of-service'] }
-const HEALTHY_ZEFFY = [{ provider: 'zeffy', kind: 'link', url: 'https://www.zeffy.com/donate' }]
+const ZEFFY_DONATE_URL = 'https://www.zeffy.com/donate'
+const HEALTHY_ZEFFY = [{ provider: 'zeffy', kind: 'link', url: ZEFFY_DONATE_URL }]
 
 export const FAILURE_CLASSES = [
   {
@@ -204,7 +205,11 @@ export const FAILURE_CLASSES = [
         footer: HEALTHY_FOOTER,
         cookieConsent: true,
         donationSurfaces: HEALTHY_ZEFFY,
-        statusOf: (url) => (broken && url.includes('zeffy.com') ? 404 : 200),
+        // Exact-match the fixture URL, not a host substring: CodeQL rightly
+        // flags `url.includes('zeffy.com')` as incomplete URL sanitization
+        // (arbitrary hosts can embed the string). Deterministic fixture, so
+        // equality is both correct and clean.
+        statusOf: (url) => (broken && url === ZEFFY_DONATE_URL ? 404 : 200),
       }),
   },
   {
