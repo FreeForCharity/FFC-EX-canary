@@ -27,7 +27,7 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "next": "^16.2.9",
+    "next": "^16.2.11",
     "postcss": "^8.5.15",
     "react": "19.2.7",
     "react-dom": "19.2.7",
@@ -68,6 +68,8 @@
     "qs": ">=6.15.2",
     "uuid": ">=11.1.1",
     "picomatch": ">=4.0.4",
-    "tmp": "^0.2.6"
+    "tmp": "^0.2.6",
+    "postcss": "$postcss",
+    "sharp": "^0.35.3"
   }
 }
