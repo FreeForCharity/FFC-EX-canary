@@ -17,6 +17,10 @@
  *     components after a child site rebrands — the footer platform-credit
  *     attribution is the one allowlisted exception. This is the enforced
  *     complement to the advisory `npm run check:rebrand` config/data checklist.
+ *  7. A workflow passing `static_site_generator: next` to
+ *     actions/configure-pages while this repo's Next config is TypeScript —
+ *     the action then writes its own next.config.js and the repo's real
+ *     config is discarded on every deploy.
  *
  * Run: `node scripts/check-drift.mjs` or `npm run check:drift`.
  * Always resolves paths relative to the repo root, so it works regardless
@@ -25,7 +29,7 @@
  */
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 // Anchor everything to the repo root (scripts/check-drift.mjs lives one
 // level down) so the check produces the same result no matter where it's
@@ -297,6 +301,26 @@ async function checkSiteConfigExists() {
   }
 }
 
+// What actually protects an FFC site, and what only looks like it does:
+//
+//   public/_headers is INERT on the stack FFC deploys. It is a Cloudflare
+//   Pages / Netlify *build* feature; FFC sites are a GitHub Pages origin
+//   behind the Cloudflare *proxy*, and neither of those reads the file.
+//   Measured on the wire, not inferred: FFC-Cloudflare-Automation#884.
+//   It is kept for forward-compatibility with a future Cloudflare Pages
+//   deploy, so its CSP is still worth keeping in sync — but its presence is
+//   not coverage, which is why its findings below are warnings, not errors.
+//
+//   The <meta http-equiv="Content-Security-Policy"> tag in layout.tsx is the
+//   only security header an FFC site actually serves today. Its absence is an
+//   error, and no finding about the inert file may mask it.
+//
+//   The other five headers (HSTS, X-Frame-Options, X-Content-Type-Options,
+//   Referrer-Policy, Permissions-Policy) cannot be set from a static export at
+//   all — <meta http-equiv> is ignored for them. They need a response-header
+//   mechanism on the zone (Cloudflare Transform Rule); fleet posture is
+//   measured by FFC-Cloudflare-Automation#894.
+//
 // CSP directives that are honored in <meta http-equiv> AND in HTTP headers.
 // We diff each of these between public/_headers and src/app/layout.tsx so
 // the two stay in lockstep on third-party origins.
@@ -329,24 +353,69 @@ function extractCspDirectives(policy) {
   return out
 }
 
-async function checkCspSync() {
-  let headersBody, layoutBody
+// Returned when a file exists but could not be read. Distinct from null
+// ("absent"), because the two call for opposite responses: absent means restore
+// it, unreadable means the file is already there and something else is wrong.
+// Collapsing them tells the reader to restore a file they already have — and
+// since the _headers finding is only a warning, it would let the run pass on a
+// filesystem error.
+const UNREADABLE = Symbol('unreadable')
+
+async function readIfExists(path) {
   try {
-    headersBody = await readFile(join(ROOT, 'public', '_headers'), 'utf8')
-  } catch {
+    return await readFile(path, 'utf8')
+  } catch (err) {
+    if (err.code === 'ENOENT') return null
+    // Normalise to forward slashes. `relative()` returns platform separators,
+    // so on Windows this message alone would spell the file `public\_headers`
+    // while every hard-coded mention in this script — and in the tests — uses a
+    // forward slash. One run would name one file two ways.
+    const rel = relative(ROOT, path).split(sep).join('/')
     errors.push(
-      'public/_headers is missing. CSP and other security headers will not be served on ' +
-        'Cloudflare/Netlify deploys. Restore the file from the template.'
+      `Could not read ${rel} (${err.code || err.message}). ` +
+        `The file is present but unreadable — this is not the same as it being absent, ` +
+        `so fix the read error rather than restoring the file from the template.`
     )
-    return
+    return UNREADABLE
   }
-  try {
-    layoutBody = await readFile(join(ROOT, 'src', 'app', 'layout.tsx'), 'utf8')
-  } catch {
+}
+
+async function checkCspSync() {
+  // Read both surfaces up front and report on each independently. Returning
+  // early on a finding about the inert _headers file would suppress the finding
+  // about the layout CSP meta tag — the only control that is actually served —
+  // so a site with no CSP at all would be told only about a file that does
+  // nothing. Measured against the shipped code before this fix: deleting BOTH
+  // reported only "public/_headers is missing".
+  const headersRaw = await readIfExists(join(ROOT, 'public', '_headers'))
+  const layoutRaw = await readIfExists(join(ROOT, 'src', 'app', 'layout.tsx'))
+
+  // Only layout.tsx can end the check early, because the live CSP lives in it
+  // and there is nothing left to assert without it. An unreadable _headers must
+  // NOT end it: readIfExists has already recorded that read failure as its own
+  // error, and stopping here would suppress the layout finding — the same
+  // masking bug this function was rewritten to remove, wearing a fourth costume.
+  if (layoutRaw === UNREADABLE) return // error already recorded by readIfExists
+  if (!layoutRaw) {
     errors.push('src/app/layout.tsx is missing. Restore the file from the template.')
     return
   }
-  const headersMatch = headersBody.match(/Content-Security-Policy:\s*([^\n]+)/)
+  const layoutBody = layoutRaw
+
+  // Unreadable and absent are both "no forward-compatible copy to compare
+  // against", but only absent earns the warning — an unreadable file is already
+  // reported with its real cause, and calling it missing would be a wrong
+  // diagnosis on top of a correct one.
+  const headersBody = headersRaw === UNREADABLE ? null : headersRaw
+  if (headersRaw !== UNREADABLE && !headersBody) {
+    warnings.push(
+      'public/_headers is missing. Neither GitHub Pages nor the Cloudflare proxy in front of it ' +
+        'reads this file, so it is inert on FFC deploys and nothing is served differently ' +
+        'today — restore it from the template only to stay forward-compatible with a Cloudflare ' +
+        'Pages deploy.'
+    )
+  }
+  const headersMatch = headersBody ? headersBody.match(/Content-Security-Policy:\s*([^\n]+)/) : null
   // Tolerate single or double quotes around the content attribute and
   // multi-line JSX formatting. The CSP itself contains nested quotes
   // (e.g. 'self', 'unsafe-inline') so we match the OUTER delimiter
@@ -355,20 +424,21 @@ async function checkCspSync() {
     layoutBody.match(/httpEquiv=["']Content-Security-Policy["'][\s\S]*?content="([^"]+)"/) ||
     layoutBody.match(/httpEquiv=["']Content-Security-Policy["'][\s\S]*?content='([^']+)'/) ||
     layoutBody.match(/httpEquiv=["']Content-Security-Policy["'][\s\S]*?content=\{`([^`]+)`\}/)
-  if (!headersMatch) {
-    errors.push(
-      'public/_headers has no Content-Security-Policy directive. Add one to keep the site ' +
-        'protected on Cloudflare/Netlify deploys.'
+  if (headersBody && !headersMatch) {
+    warnings.push(
+      'public/_headers has no Content-Security-Policy directive. This changes nothing that is ' +
+        'served today (the file is inert on FFC deploys); add one to keep the forward-compatible ' +
+        'copy aligned with the layout.tsx meta tag.'
     )
-    return
   }
   if (!layoutMatch) {
     errors.push(
-      'src/app/layout.tsx has no <meta http-equiv="Content-Security-Policy"> tag. Add one so ' +
-        'GitHub Pages deploys still get baseline CSP protection.'
+      'src/app/layout.tsx has no <meta http-equiv="Content-Security-Policy"> tag. This is the ' +
+        'ONLY security header an FFC site actually serves — without it the site has no CSP at ' +
+        'all, whatever public/_headers contains.'
     )
-    return
   }
+  if (!headersMatch || !layoutMatch) return
 
   const headersCsp = extractCspDirectives(headersMatch[1])
   const layoutCsp = extractCspDirectives(layoutMatch[1])
@@ -384,7 +454,9 @@ async function checkCspSync() {
       if (onlyInLayout.length) detail.push(`only in layout.tsx: ${onlyInLayout.join(' ')}`)
       errors.push(
         `CSP "${directive}" drifted between public/_headers and src/app/layout.tsx — ${detail.join(' / ')}. ` +
-          `Resource will load on one host and fail on the other. Update both files together.`
+          `The layout.tsx tag alone decides what loads today; _headers is the forward-compatible ` +
+          `copy. A drift means one was edited and the other was not, so whichever is behind is ` +
+          `wrong — check which, then update both files together.`
       )
     }
   }
@@ -549,31 +621,137 @@ async function checkBrandIdentity() {
   }
 }
 
-await checkSiteConfigExists()
-await checkSiteConfigUrl()
-await checkKebabCaseRoutes()
-await checkAssetPathUsage()
-await checkSecrets()
-await checkPlaceholderUrl()
-await checkBrandIdentity()
-await checkCspSync()
-await checkSecurityTxtSync()
+// Next config filenames actions/configure-pages CANNOT read. The action only
+// understands next.config.js / .mjs; given anything else it logs "Using default
+// blank configuration" and WRITES its own next.config.js holding just
+// {output, basePath, images.unoptimized}. Next prefers .js over .ts, so the
+// repo's real config is discarded on every deploy — measured on
+// Footer_Only_Template, where removing the input alone flipped
+// /privacy-policy/ from 404 to 200 (FFC-Cloudflare-Automation#880).
+const UNREADABLE_NEXT_CONFIG = /^next\.config\.(ts|mts|cts)$/
+// The two the action does read. `.cjs` is deliberately absent: the action looks
+// for .js/.mjs, so a .cjs alongside a .ts still ends in a generated config.
+const READABLE_NEXT_CONFIG = /^next\.config\.(js|mjs)$/
+const NEXT_CONFIG_FILE = /^next\.config\./
 
-if (warnings.length) {
-  console.warn('\n⚠️  Drift warnings:')
-  for (const w of warnings) console.warn('  - ' + w)
+// Matches the input as a YAML mapping key, quoted or not, with or without a
+// trailing comment. Anchored to the start of the line's content (after
+// indentation and an optional list dash), so a line that merely *mentions* the
+// input inside a `#` comment cannot match — a comment line's first non-space
+// character is `#`. That distinction matters: the fix for this defect is a
+// comment block explaining why the input is deliberately absent.
+const STATIC_SITE_GENERATOR_NEXT = /^(?:-\s*)?static_site_generator\s*:\s*(['"]?)next\1\s*(?:#.*)?$/
+
+/**
+ * Pure detector, exported for tests: given the repo's workflow files and the
+ * `next.config.*` filenames present at its root, report every workflow line
+ * that actively sets `static_site_generator: next` while the Next config is
+ * one the action cannot read.
+ *
+ * @param {{path: string, body: string}[]} workflows
+ * @param {string[]} nextConfigFilenames
+ * @returns {{path: string, line: number, message: string}[]}
+ */
+export function pagesConfigDiscardFindings(workflows, nextConfigFilenames) {
+  const unreadable = nextConfigFilenames.filter((n) => UNREADABLE_NEXT_CONFIG.test(n))
+  if (unreadable.length === 0) return []
+  // A readable config sitting alongside changes the mechanism: the action edits
+  // that file rather than generating one, and Next prefers it over the .ts with
+  // or without this input. The .ts is dead there for a different reason — a real
+  // problem, but not one this rule owns or that removing the input would fix.
+  // Failing CI with a diagnosis that does not apply is worse than staying quiet.
+  if (nextConfigFilenames.some((n) => READABLE_NEXT_CONFIG.test(n))) return []
+  const findings = []
+  for (const { path, body } of workflows) {
+    const lines = body.split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      if (!STATIC_SITE_GENERATOR_NEXT.test(lines[i].trim())) continue
+      findings.push({
+        path,
+        line: i + 1,
+        message:
+          `${path}:${i + 1} sets "static_site_generator: next" (the actions/configure-pages input) ` +
+          `while this repo's Next config is ${unreadable.join(', ')} — which that action cannot ` +
+          `read. It writes its own next.config.js and Next prefers it, silently discarding every ` +
+          `setting in ${unreadable[0]} on each deploy. Remove the input and let the workflow's own ` +
+          `basePath step decide: public/CNAME when present, otherwise the repo name. Confirm that ` +
+          `value matches the repo's actual Pages binding first — a stale CNAME with no binding ` +
+          `builds root-relative assets for a subpath deploy, and every one of them 404s. ` +
+          `See FreeForCharity/FFC-Cloudflare-Automation#880.`,
+      })
+    }
+  }
+  return findings
 }
-if (errors.length) {
-  console.error('\n❌ Drift errors:')
-  for (const e of errors) console.error('  - ' + e)
-  console.error(
-    '\nThese violate FFC best practices. Fix them or open an issue if you believe one is a false positive.'
+
+async function checkPagesConfigDiscard() {
+  let rootEntries
+  try {
+    rootEntries = await readdir(ROOT, { withFileTypes: true })
+  } catch {
+    return
+  }
+  const nextConfigFilenames = rootEntries
+    .filter((e) => e.isFile() && NEXT_CONFIG_FILE.test(e.name))
+    .map((e) => e.name)
+
+  const workflowDir = join(ROOT, '.github', 'workflows')
+  let workflowEntries
+  try {
+    workflowEntries = await readdir(workflowDir, { withFileTypes: true })
+  } catch {
+    return // no workflows (e.g. a fresh scaffold) — nothing to check
+  }
+  const workflows = []
+  for (const entry of workflowEntries) {
+    // Only live workflows: GitHub runs .yml/.yaml here, so a .bak or .disabled
+    // copy cannot discard anything and is not this check's business.
+    if (!entry.isFile() || !/\.ya?ml$/.test(entry.name)) continue
+    workflows.push({
+      path: `.github/workflows/${entry.name}`,
+      body: await readFile(join(workflowDir, entry.name), 'utf8'),
+    })
+  }
+
+  for (const finding of pagesConfigDiscardFindings(workflows, nextConfigFilenames)) {
+    errors.push(finding.message)
+  }
+}
+
+async function main() {
+  await checkSiteConfigExists()
+  await checkSiteConfigUrl()
+  await checkKebabCaseRoutes()
+  await checkAssetPathUsage()
+  await checkSecrets()
+  await checkPlaceholderUrl()
+  await checkBrandIdentity()
+  await checkCspSync()
+  await checkSecurityTxtSync()
+  await checkPagesConfigDiscard()
+
+  if (warnings.length) {
+    console.warn('\n⚠️  Drift warnings:')
+    for (const w of warnings) console.warn('  - ' + w)
+  }
+  if (errors.length) {
+    console.error('\n❌ Drift errors:')
+    for (const e of errors) console.error('  - ' + e)
+    console.error(
+      '\nThese violate FFC best practices. Fix them or open an issue if you believe one is a false positive.'
+    )
+    process.exit(1)
+  }
+
+  console.log(
+    warnings.length
+      ? `\n✅ No drift errors (${warnings.length} warning${warnings.length === 1 ? '' : 's'}).`
+      : '\n✅ No drift detected. Repo aligned with FFC best practices.'
   )
-  process.exit(1)
 }
 
-console.log(
-  warnings.length
-    ? `\n✅ No drift errors (${warnings.length} warning${warnings.length === 1 ? '' : 's'}).`
-    : '\n✅ No drift detected. Repo aligned with FFC best practices.'
-)
+// Only run the checks when executed directly, so a test can import the pure
+// detector above without the whole suite firing — and exiting — on import.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main()
+}
