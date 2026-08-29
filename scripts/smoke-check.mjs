@@ -38,10 +38,11 @@ const REQUEST_TIMEOUT_MS = 15 * 1000
 const RETRY_DELAY_MS = 5 * 1000
 const deadline = Date.now() + TOTAL_DEADLINE_MS
 
-async function fetchWithRetry(path) {
-  // Origin-absolute paths (starting with /) are joined onto BASE; a full
-  // URL is fetched as-is so callers can resolve against the origin.
-  const url = path.startsWith('http') ? path : `${BASE}${path}`
+async function fetchWithRetry(target) {
+  // A full http(s) URL is fetched as-is (callers resolve manifest srcs
+  // against the origin themselves); anything else is treated as a
+  // BASE-relative path and joined onto BASE.
+  const url = /^https?:\/\//.test(target) ? target : `${BASE}${target}`
   let lastErr = null
   for (let attempt = 1; Date.now() < deadline; attempt++) {
     const controller = new AbortController()
