@@ -38,8 +38,11 @@ const REQUEST_TIMEOUT_MS = 15 * 1000
 const RETRY_DELAY_MS = 5 * 1000
 const deadline = Date.now() + TOTAL_DEADLINE_MS
 
-async function fetchWithRetry(path) {
-  const url = `${BASE}${path}`
+async function fetchWithRetry(target) {
+  // A full http(s) URL is fetched as-is (callers resolve manifest srcs
+  // against the origin themselves); anything else is treated as a
+  // BASE-relative path and joined onto BASE.
+  const url = /^https?:\/\//.test(target) ? target : `${BASE}${target}`
   let lastErr = null
   for (let attempt = 1; Date.now() < deadline; attempt++) {
     const controller = new AbortController()
@@ -193,16 +196,17 @@ async function smoke() {
       // NEXT_PUBLIC_BASE_PATH=/repo would emit icon srcs like
       // /repo/android-chrome-192x192.png that 404 on the root-served
       // custom domain. The PWA install prompt fails silently otherwise.
+      //
+      // Resolve each src the way a browser resolves it against the
+      // manifest's URL: a leading-slash src is origin-absolute (it already
+      // carries any basePath), so joining it onto BASE again would
+      // double the subpath — that exact mistake made this check 404 on
+      // every github.io subpath deploy while custom domains passed.
       if (Array.isArray(manifest.icons)) {
         for (const icon of manifest.icons) {
           if (!icon?.src) continue
-          const iconUrl = icon.src.startsWith('http')
-            ? icon.src
-            : icon.src.startsWith('/')
-              ? icon.src
-              : `/${icon.src}`
-          const iconPath = iconUrl.startsWith('http') ? iconUrl.replace(BASE, '') : iconUrl
-          const r = await fetchWithRetry(iconPath).catch(() => null)
+          const iconTarget = new URL(icon.src, `${BASE}/`).href
+          const r = await fetchWithRetry(iconTarget).catch(() => null)
           const ok = r && r.status === 200
           record(`manifest icon ${icon.src} resolves`, ok, r ? `HTTP ${r.status}` : 'fetch failed')
         }
