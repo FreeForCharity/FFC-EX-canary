@@ -67,7 +67,7 @@ jobs:
         # comes back while the Next config is TypeScript.
 
       - name: Restore Next.js cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             .next/cache
