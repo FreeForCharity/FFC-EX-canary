@@ -483,7 +483,7 @@ the validation logic into a separate function for better testability."
 pnpm run build
 
 # Run Lighthouse
-lhci autorun
+pnpm exec lhci autorun
 
 # Check bundle size
 pnpm run build
@@ -544,7 +544,7 @@ pnpm audit
 pnpm audit fix
 
 # Update dependencies
-npm update
+pnpm update
 ```
 
 ---
@@ -591,7 +591,7 @@ pnpm run build           # Build for production
 # Analysis
 pnpm run test:coverage   # Test coverage report
 pnpm audit               # Security vulnerabilities
-npm outdated            # Check outdated packages
+pnpm outdated            # Check outdated packages
 ```
 
 ### External Resources
