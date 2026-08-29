@@ -606,7 +606,7 @@ pnpm run test:e2e tests/logo.spec.ts
 pnpm outdated
 
 # Update specific package
-ppnpm update package-name
+pnpm update package-name
 
 # Update all to latest
 pnpm update
