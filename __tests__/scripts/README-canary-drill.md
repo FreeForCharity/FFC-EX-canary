@@ -43,7 +43,7 @@ to the other classes the engine claims.
 
 ```bash
 node __tests__/scripts/smoke-compliance-drill.mjs   # standalone report + exit code
-npm test -- canary-drill                            # via jest
+pnpm test -- canary-drill                            # via jest
 ```
 
 ## What is NOT covered here
