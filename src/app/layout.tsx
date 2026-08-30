@@ -9,6 +9,7 @@ import { assetPath } from '@/lib/assetPath'
 import { openSans, lato, faustina } from '@/lib/fonts'
 import { AT_POLYFILL_JS } from '@/lib/at-polyfill'
 import { OG_IMAGE } from '@/lib/page-metadata'
+import { CONSENT_MODE_BOOTSTRAP } from '@/lib/consent-mode'
 
 const defaultTitle = `${siteConfig.name} | ${siteConfig.tagline}`
 
@@ -111,6 +112,13 @@ export default function RootLayout({
           fetchPriority="high"
         />
 
+        {/* Google Consent Mode v2 defaults — MUST run before any Google tag
+            (i.e. before the GoogleTagManager component below) so the
+            region-scoped defaults are already on the dataLayer when GTM/GA4
+            initialise.
+            Granted worldwide, denied (cookieless pings) only where Google's
+            EU User Consent Policy requires opt-in. See src/lib/consent-mode.ts. */}
+        <script dangerouslySetInnerHTML={{ __html: CONSENT_MODE_BOOTSTRAP }} />
         <GoogleTagManager />
       </head>
       <body
