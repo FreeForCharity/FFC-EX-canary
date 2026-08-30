@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { analyticsConfig } from '@/lib/analytics.config'
+import { analyticsConfig, isConfigured } from '@/lib/analytics.config'
+import { updateGoogleConsent } from '@/lib/consent-mode'
 
 // Tracking IDs live in src/lib/analytics.config.ts — edit them there.
 const GA_MEASUREMENT_ID = analyticsConfig.gaMeasurementId
@@ -44,7 +45,13 @@ export default function CookieConsent() {
   const modalRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
 
+  // Google tags speak Consent Mode, so loading is NOT gated on the
+  // analytics toggle: the direct GA4 tag loads on every pageview (like GTM
+  // in the layout) and the Consent Mode defaults/updates decide whether it
+  // may use cookies. With the shipped placeholder ID this loader is inert —
+  // fleet sites get GA4 delivered through GTM instead.
   const loadGoogleAnalytics = useCallback(() => {
+    if (!isConfigured(GA_MEASUREMENT_ID)) return
     if (
       typeof window !== 'undefined' &&
       !document.querySelector('script[src*="googletagmanager.com/gtag"]')
@@ -70,7 +77,10 @@ export default function CookieConsent() {
     }
   }, [])
 
+  // Meta Pixel does NOT speak Consent Mode, so it stays strictly opt-in:
+  // it loads only on an explicit marketing grant, everywhere in the world.
   const loadMetaPixel = useCallback(() => {
+    if (!isConfigured(META_PIXEL_ID)) return
     if (typeof window !== 'undefined' && !document.querySelector('script[src*="fbevents.js"]')) {
       const fbScript = document.createElement('script')
       fbScript.textContent = `
@@ -98,7 +108,10 @@ export default function CookieConsent() {
     }
   }, [])
 
+  // Microsoft Clarity does NOT speak Consent Mode, so it stays strictly
+  // opt-in: it loads only on an explicit analytics grant, everywhere.
   const loadMicrosoftClarity = useCallback(() => {
+    if (!isConfigured(CLARITY_PROJECT_ID)) return
     if (typeof window !== 'undefined' && !document.querySelector('script[src*="clarity.ms"]')) {
       const clarityScript = document.createElement('script')
       clarityScript.textContent = `
@@ -167,9 +180,20 @@ export default function CookieConsent() {
         })
       }
 
-      // Load scripts based on consent independently
+      // Push the Google Consent Mode `update` mirroring this choice. For an
+      // EEA/UK/CH visitor this is what lifts the regional denied default to
+      // granted; for everyone else it matters when they decline (storage
+      // flips to denied and GA4 falls back to cookieless pings).
+      updateGoogleConsent(prefs)
+
+      // Google tags load regardless of the toggle — Consent Mode (above)
+      // gates whether they may use cookies. Inert with a placeholder ID.
+      loadGoogleAnalytics()
+
+      // Non-Google tags don't speak Consent Mode, so they stay strictly
+      // opt-in everywhere: Clarity needs an explicit analytics grant, Meta
+      // Pixel an explicit marketing grant.
       if (prefs.analytics) {
-        loadGoogleAnalytics()
         loadMicrosoftClarity()
       }
       if (prefs.marketing) {
@@ -240,6 +264,12 @@ export default function CookieConsent() {
       loadPreferencesFromLocalStorage(false)
     }
 
+    // Google tags load on every pageview, stored choice or not — Consent
+    // Mode's regional defaults (set in the layout <head>) gate their
+    // storage, and applyConsent re-invokes this after any banner choice.
+    // A first-time EEA visitor is measured cookielessly until they accept.
+    loadGoogleAnalytics()
+
     // Check if user has already made a choice with error handling
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadPreferencesFromLocalStorage(true)
@@ -248,7 +278,7 @@ export default function CookieConsent() {
     return () => {
       delete window.openCookiePreferences
     }
-  }, [loadPreferencesFromLocalStorage])
+  }, [loadGoogleAnalytics, loadPreferencesFromLocalStorage])
 
   // Focus management for modal
   useEffect(() => {

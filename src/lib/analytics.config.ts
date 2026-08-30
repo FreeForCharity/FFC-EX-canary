@@ -23,3 +23,21 @@ export const analyticsConfig = {
   // Microsoft Clarity project ID.
   clarityProjectId: 'XXXXXXXXXX',
 } as const
+
+// The placeholder values shipped above. Loaders check against this list so
+// that "leave a value as its placeholder to keep that integration
+// effectively inert" (the promise a few lines up) is actually honored.
+const PLACEHOLDER_IDS: readonly string[] = ['G-XXXXXXXXXX', 'XXXXXXXXXXXXXXX', 'XXXXXXXXXX']
+
+/**
+ * True when an analytics ID has been replaced with a real value. A falsy
+ * value, one of the shipped placeholders, or any obviously-templated value
+ * (six or more consecutive X's) counts as NOT configured, so the
+ * integration it belongs to stays inert.
+ */
+export function isConfigured(id: string | undefined | null): boolean {
+  if (!id) return false
+  if (PLACEHOLDER_IDS.includes(id)) return false
+  if (/X{6,}/.test(id)) return false
+  return true
+}
