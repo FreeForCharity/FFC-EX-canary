@@ -131,11 +131,21 @@ export default function CookieConsent() {
     // domain with a leading dot (e.g. `.example.org`) so it is readable
     // across subdomains — expiring it with only the bare hostname silently
     // does nothing and the visitor keeps the identifier they just asked us
-    // to drop. Try every scope the cookie could plausibly hold: host-only,
-    // the exact hostname, and the apex with and without a leading dot.
-    const hostname = window.location.hostname
-    const apex = hostname.replace(/^www\./, '')
-    const domains = Array.from(new Set([hostname, `.${hostname}`, apex, `.${apex}`]))
+    // to drop.
+    //
+    // Best-effort candidate set, no public-suffix list needed: walk up the
+    // hostname's labels and try every suffix that keeps at least two
+    // labels, each with and without a leading dot, plus the host-only
+    // form. Candidates that happen to be public suffixes (e.g. `co.uk`)
+    // are harmless no-ops — browsers reject cookie writes (and therefore
+    // expirations) scoped to a public suffix.
+    const labels = window.location.hostname.split('.')
+    const domains = new Set<string>()
+    for (let i = 0; i < labels.length - 1; i++) {
+      const suffix = labels.slice(i).join('.')
+      domains.add(suffix)
+      domains.add(`.${suffix}`)
+    }
 
     names.forEach((name) => {
       const expiry = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`

@@ -18,12 +18,13 @@ const GA_SCRIPT_SELECTOR = 'script[src*="googletagmanager.com/gtag"]'
 
 /**
  * Locks the fix for the returning-decliner race: the unscoped Consent Mode
- * default is GRANTED (and carries no wait_for_update), so if the GA tag were
- * injected before the stored choice is restored, a returning visitor outside
- * the EEA/UK/CH who previously DECLINED analytics could be sent a
- * cookie-based hit before their stored denial reaches the queue. The
- * component must therefore push the `consent update` BEFORE injecting GA on
- * a stored-choice restore.
+ * default is GRANTED, so if the GA tag were injected before the stored
+ * choice is restored, a returning visitor outside the EEA/UK/CH who
+ * previously DECLINED analytics could be sent a cookie-based hit before
+ * their stored denial reaches the queue. Both default calls do carry
+ * wait_for_update as a mitigation, but that is a bounded grace window, not
+ * an ordering guarantee — the component must still push the
+ * `consent update` BEFORE injecting GA on a stored-choice restore.
  */
 describe('CookieConsent restore/load ordering', () => {
   beforeEach(() => {
