@@ -71,6 +71,23 @@ describe('CONSENT_MODE_BOOTSTRAP', () => {
     expect(CONSENT_WAIT_FOR_UPDATE_MS).toBe(500)
   })
 
+  it('sets wait_for_update on BOTH default calls (unscoped grant included)', () => {
+    // Deliberate deviation from the reference: GTM loads from the layout
+    // here (not behind the consent component), so the unscoped grant also
+    // needs a wait window or a returning non-EEA visitor's stored decline
+    // could be restored after the tags already evaluated consent.
+    const waitRe = new RegExp(`'wait_for_update': ${CONSENT_WAIT_FOR_UPDATE_MS}`, 'g')
+    const occurrences = CONSENT_MODE_BOOTSTRAP.match(waitRe) ?? []
+    expect(occurrences).toHaveLength(2)
+    // And both sit inside `consent default` calls, after each opening.
+    const defaultCalls = CONSENT_MODE_BOOTSTRAP.split("gtag('consent', 'default'").slice(1)
+    expect(defaultCalls).toHaveLength(2)
+    for (const call of defaultCalls) {
+      const body = call.split('});')[0]
+      expect(body).toContain(`'wait_for_update': ${CONSENT_WAIT_FOR_UPDATE_MS}`)
+    }
+  })
+
   it('enables url_passthrough and ads_data_redaction', () => {
     expect(CONSENT_MODE_BOOTSTRAP).toContain("gtag('set', 'url_passthrough', true)")
     expect(CONSENT_MODE_BOOTSTRAP).toContain("gtag('set', 'ads_data_redaction', true)")
@@ -89,18 +106,24 @@ describe('root layout consent bootstrap ordering', () => {
   // defaults would arrive after the Google tags initialise.
   const layoutSource = readFileSync(join(process.cwd(), 'src/app/layout.tsx'), 'utf8')
 
+  // Whitespace/quote-tolerant patterns: quote style, spacing, or import
+  // reordering must not fail these tests while the behavior stays correct.
+  const bootstrapImportRe =
+    /import\s*\{[^}]*\bCONSENT_MODE_BOOTSTRAP\b[^}]*\}\s*from\s*['"]@\/lib\/consent-mode['"]/
+  const bootstrapEmitRe =
+    /dangerouslySetInnerHTML\s*=\s*\{\{\s*__html:\s*CONSENT_MODE_BOOTSTRAP\s*\}\}/
+  const gtmElementRe = /<GoogleTagManager\s*\/>/
+
   it('imports the bootstrap from the consent-mode lib', () => {
-    expect(layoutSource).toContain("import { CONSENT_MODE_BOOTSTRAP } from '@/lib/consent-mode'")
+    expect(layoutSource).toMatch(bootstrapImportRe)
   })
 
   it('emits the bootstrap script before <GoogleTagManager />', () => {
-    const bootstrapIdx = layoutSource.indexOf(
-      'dangerouslySetInnerHTML={{ __html: CONSENT_MODE_BOOTSTRAP }}'
-    )
-    const gtmIdx = layoutSource.indexOf('<GoogleTagManager />')
-    expect(bootstrapIdx).toBeGreaterThan(-1)
-    expect(gtmIdx).toBeGreaterThan(-1)
-    expect(bootstrapIdx).toBeLessThan(gtmIdx)
+    const bootstrapMatch = bootstrapEmitRe.exec(layoutSource)
+    const gtmMatch = gtmElementRe.exec(layoutSource)
+    expect(bootstrapMatch).not.toBeNull()
+    expect(gtmMatch).not.toBeNull()
+    expect(bootstrapMatch!.index).toBeLessThan(gtmMatch!.index)
   })
 })
 
@@ -163,10 +186,13 @@ describe('isConfigured (placeholder guard)', () => {
     expect(isConfigured('XXXXXXXXXX')).toBe(false)
   })
 
-  it('treats falsy values as unset', () => {
+  it('treats falsy and whitespace-only values as unset', () => {
     expect(isConfigured('')).toBe(false)
     expect(isConfigured(undefined)).toBe(false)
     expect(isConfigured(null)).toBe(false)
+    expect(isConfigured('   ')).toBe(false)
+    expect(isConfigured('\t\n')).toBe(false)
+    expect(isConfigured('  G-XXXXXXXXXX  ')).toBe(false)
   })
 
   it('accepts real-looking IDs', () => {

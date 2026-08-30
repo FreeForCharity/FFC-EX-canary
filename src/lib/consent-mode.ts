@@ -99,6 +99,15 @@ export const CONSENT_WAIT_FOR_UPDATE_MS = 500
  * identifiers from tag requests while `ad_storage` is denied — both are
  * no-ops once consent is granted, so they cost nothing outside the EEA.
  *
+ * Deliberate deviation from the freeforcharity reference: `wait_for_update`
+ * is set on BOTH default calls here, not just the region-scoped denial.
+ * There, GTM loads behind the consent component, so a stored choice is
+ * always restored before any Google tag initialises; here GTM loads from
+ * the layout, so without a wait on the unscoped grant it could initialise
+ * under the granted default before React hydrates and restores a returning
+ * non-EEA visitor's stored DECLINE. The wait gives the stored-choice
+ * restore a window before tags evaluate consent, in every region.
+ *
  * Declared as a function declaration so `gtag` lands on `window` and every
  * later caller (the GA4 loader, the consent banner) shares one queue.
  */
@@ -123,7 +132,8 @@ gtag('consent', 'default', {
   'analytics_storage': 'granted',
   'functionality_storage': 'granted',
   'personalization_storage': 'granted',
-  'security_storage': 'granted'
+  'security_storage': 'granted',
+  'wait_for_update': ${CONSENT_WAIT_FOR_UPDATE_MS}
 });
 gtag('set', 'url_passthrough', true);
 gtag('set', 'ads_data_redaction', true);
