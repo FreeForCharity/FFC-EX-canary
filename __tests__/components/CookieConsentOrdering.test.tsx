@@ -79,6 +79,42 @@ describe('CookieConsent restore/load ordering', () => {
     )
   })
 
+  it('queues the Consent Mode update BEFORE the custom consent_update event', async () => {
+    // Both writes go to the same dataLayer queue and GTM processes it in
+    // order, so a container trigger keyed on `consent_update` must not be
+    // able to run before the consent state for this choice is queued.
+    const hasCustomEvent = () =>
+      (window.dataLayer ?? []).some(
+        (entry) => (entry as { event?: string } | undefined)?.event === 'consent_update'
+      )
+
+    const customEventPresentAtUpdate: boolean[] = []
+    window.gtag = jest.fn((...args: unknown[]) => {
+      if (args[0] === 'consent' && args[1] === 'update') {
+        customEventPresentAtUpdate.push(hasCustomEvent())
+      }
+    })
+
+    window.localStorage.setItem(
+      'cookie-consent',
+      JSON.stringify({ necessary: true, functional: true, analytics: false, marketing: false })
+    )
+
+    render(<CookieConsent />)
+
+    await waitFor(() => {
+      expect(customEventPresentAtUpdate.length).toBeGreaterThanOrEqual(1)
+    })
+
+    // The custom event had not been pushed yet at any consent update…
+    expect(customEventPresentAtUpdate.every((present) => present === false)).toBe(true)
+    // …and it did get pushed, so this is an ordering assertion rather than an
+    // assertion that the event never fires.
+    await waitFor(() => {
+      expect(hasCustomEvent()).toBe(true)
+    })
+  })
+
   it('still injects the GA script when no choice is stored (defaults govern)', async () => {
     render(<CookieConsent />)
 
