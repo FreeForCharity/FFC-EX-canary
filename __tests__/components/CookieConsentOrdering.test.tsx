@@ -79,6 +79,48 @@ describe('CookieConsent restore/load ordering', () => {
     )
   })
 
+  it('queues the Consent Mode update BEFORE the custom consent_update event', async () => {
+    // In production both writes reach the same dataLayer queue and GTM
+    // processes it in order, so a container trigger keyed on `consent_update`
+    // must not be able to run before this choice's consent state is queued.
+    //
+    // What this case asserts is the CALL order that produces that queue
+    // order: window.gtag is a mock here, so the Consent Mode update never
+    // actually reaches dataLayer during the test. That is enough to
+    // discriminate the defect — swapping the two makes this fail — but it is
+    // not a direct assertion about dataLayer contents.
+    const hasCustomEvent = () =>
+      (window.dataLayer ?? []).some(
+        (entry) => (entry as { event?: string } | undefined)?.event === 'consent_update'
+      )
+
+    const customEventPresentAtUpdate: boolean[] = []
+    window.gtag = jest.fn((...args: unknown[]) => {
+      if (args[0] === 'consent' && args[1] === 'update') {
+        customEventPresentAtUpdate.push(hasCustomEvent())
+      }
+    })
+
+    window.localStorage.setItem(
+      'cookie-consent',
+      JSON.stringify({ necessary: true, functional: true, analytics: false, marketing: false })
+    )
+
+    render(<CookieConsent />)
+
+    await waitFor(() => {
+      expect(customEventPresentAtUpdate.length).toBeGreaterThanOrEqual(1)
+    })
+
+    // The custom event had not been pushed yet at any consent update…
+    expect(customEventPresentAtUpdate.every((present) => present === false)).toBe(true)
+    // …and it did get pushed, so this is an ordering assertion rather than an
+    // assertion that the event never fires.
+    await waitFor(() => {
+      expect(hasCustomEvent()).toBe(true)
+    })
+  })
+
   it('still injects the GA script when no choice is stored (defaults govern)', async () => {
     render(<CookieConsent />)
 
