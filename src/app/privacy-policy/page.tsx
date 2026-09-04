@@ -317,14 +317,12 @@ export default function PrivacyPolicy() {
             handling of your personal data, and this section supplements the rest of this policy.
           </p>
           <p className="text-[14px] text-[#666] pb-[10px] leading-[24px] font-[500]">
-            <strong>How consent works regionally.</strong> We use Google Consent Mode. Whether the
-            permissive or the opt-in default applies to Google&apos;s tags is determined by Google
-            from your IP address at the time of your visit; IP geolocation is approximate. In the
-            EEA, the UK, and Switzerland, Google Analytics runs cookie-free until you accept.
-            (Switzerland is included because Google&apos;s consent defaults cover it; the data of
-            visitors in Switzerland is protected by Switzerland&apos;s Federal Act on Data
-            Protection (FADP) rather than the GDPR.) Everywhere else, including the United States,
-            analytics cookies are set from your first pageview. Our{' '}
+            <strong>How consent works, in plain language.</strong> We use Google Consent Mode. The
+            same rule applies to every visitor, so nothing depends on where you are. Google
+            Analytics runs cookie-free until you accept, wherever in the world you are. (Visitors in
+            Switzerland are protected by Switzerland&apos;s Federal Act on Data Protection (FADP)
+            rather than the GDPR; the treatment described here is the same either way.) There is no
+            country in which analytics cookies are set before you choose. Our{' '}
             <Link href="/cookie-policy" className="text-[#0062CC] underline">
               Cookie Policy
             </Link>{' '}
@@ -335,13 +333,14 @@ export default function PrivacyPolicy() {
           </p>
           <ul className="list-inside list-disc space-y-[4px] pb-[1em]">
             <li className="text-[14px] text-[#666] leading-[24px] font-[500]">
-              <strong>Consent:</strong> In the EEA, the UK, and Switzerland, Google&apos;s tags set
-              no cookies and read no identifiers until you accept through the cookie consent banner
-              — until then only aggregate, cookieless measurement takes place. Session recording
-              (Microsoft Clarity) and marketing (Meta Pixel) load only after you opt in. You can
-              withdraw consent at any time via the Cookie Preferences link in the footer; this site
-              then deletes the tracking cookies it set, Google&apos;s tags return to the cookieless
-              state, and Clarity and the Meta Pixel stop loading from your next page view.
+              <strong>Consent:</strong> Google&apos;s tags set no analytics or advertising cookies
+              and read no identifiers from your device until you accept through the cookie consent
+              banner, wherever in the world you are — until then only aggregate, cookieless
+              measurement takes place. Session recording (Microsoft Clarity) and marketing (Meta
+              Pixel) load only after you opt in. You can withdraw consent at any time via the Cookie
+              Preferences link in the footer; this site then deletes the tracking cookies it set,
+              Google&apos;s tags return to the cookieless state, and Clarity and the Meta Pixel stop
+              loading from your next page view.
             </li>
             <li className="text-[14px] text-[#666] leading-[24px] font-[500]">
               <strong>Legitimate interests:</strong> Operating, securing, and improving this website
@@ -399,11 +398,11 @@ export default function PrivacyPolicy() {
             <strong>Opt-out preference signals (Global Privacy Control / Do Not Track).</strong>{' '}
             This site does not read or respond to the Global Privacy Control or Do Not Track browser
             signals. We do not sell or share personal information as defined by the CCPA/CPRA, so
-            there is nothing for those signals to opt out of. Analytics cookies are set
-            automatically for visitors outside the EEA, the UK, and Switzerland; any visitor can
-            turn them off at any time via the Cookie Preferences link in the footer, and we delete
-            the cookies when you do. Session recording (Microsoft Clarity) and marketing (Meta
-            Pixel) never load without your explicit opt-in, anywhere in the world.
+            there is nothing for those signals to opt out of. Analytics cookies are never set before
+            you accept, anywhere in the world; you can turn them off again at any time via the
+            Cookie Preferences link in the footer, and we delete the cookies when you do. Session
+            recording (Microsoft Clarity) and marketing (Meta Pixel) never load without your
+            explicit opt-in, anywhere in the world.
           </p>
           <p className="text-[14px] text-[#666] pb-[10px] leading-[24px] font-[500]">
             <strong>Exercising your rights.</strong> Submit a request to{' '}

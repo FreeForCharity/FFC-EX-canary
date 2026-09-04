@@ -17,14 +17,14 @@ jest.mock('../../src/lib/analytics.config', () => {
 const GA_SCRIPT_SELECTOR = 'script[src*="googletagmanager.com/gtag"]'
 
 /**
- * Locks the fix for the returning-decliner race: the unscoped Consent Mode
- * default is GRANTED, so if the GA tag were injected before the stored
- * choice is restored, a returning visitor outside the EEA/UK/CH who
- * previously DECLINED analytics could be sent a cookie-based hit before
- * their stored denial reaches the queue. Both default calls do carry
- * wait_for_update as a mitigation, but that is a bounded grace window, not
- * an ordering guarantee — the component must still push the
- * `consent update` BEFORE injecting GA on a stored-choice restore.
+ * Locks the fix for the returning-granter race: the Consent Mode default is
+ * DENIED for every visitor, so if the GA tag were injected before the stored
+ * choice is restored, a returning visitor who previously ACCEPTED analytics
+ * would have their opening hit go out cookieless, before the grant reaches the
+ * queue. The single default call does carry wait_for_update as a mitigation,
+ * but that is a bounded grace window, not an ordering guarantee — the component
+ * must still push the `consent update` BEFORE injecting GA on a stored-choice
+ * restore.
  */
 describe('CookieConsent restore/load ordering', () => {
   beforeEach(() => {
@@ -76,6 +76,48 @@ describe('CookieConsent restore/load ordering', () => {
       'consent',
       'update',
       expect.objectContaining({ analytics_storage: 'denied', ad_storage: 'denied' })
+    )
+  })
+
+  it('pushes the stored GRANT consent update BEFORE injecting the GA script', async () => {
+    // This is the case the file docstring describes, and until now nothing
+    // exercised it: the denial case above was written when the default was
+    // permissive, where a stored DENIAL arriving late meant a cookie-based
+    // hit. Under a denied-by-default model the exposure is the mirror image
+    // — a returning visitor who ACCEPTED has their opening hit go out
+    // cookieless if GA is injected before their stored grant reaches the
+    // queue. Both orderings are worth locking, but only this one matches the
+    // risk the docstring claims to cover.
+    const gaPresentAtUpdate: boolean[] = []
+    const gtagMock = jest.fn((...args: unknown[]) => {
+      if (args[0] === 'consent' && args[1] === 'update') {
+        gaPresentAtUpdate.push(document.querySelector(GA_SCRIPT_SELECTOR) !== null)
+      }
+    })
+    window.gtag = gtagMock
+
+    // Returning visitor who previously ACCEPTED analytics.
+    window.localStorage.setItem(
+      'cookie-consent',
+      JSON.stringify({ necessary: true, functional: true, analytics: true, marketing: false })
+    )
+
+    render(<CookieConsent />)
+
+    await waitFor(() => {
+      expect(document.querySelector(GA_SCRIPT_SELECTOR)).not.toBeNull()
+    })
+
+    // Every consent update fired while GA was NOT yet injected, so the stored
+    // grant is on the queue ahead of the tag's config and the opening hit is
+    // cookie-based rather than cookieless.
+    expect(gaPresentAtUpdate.length).toBeGreaterThanOrEqual(1)
+    expect(gaPresentAtUpdate.every((gaWasPresent) => gaWasPresent === false)).toBe(true)
+
+    expect(gtagMock).toHaveBeenCalledWith(
+      'consent',
+      'update',
+      expect.objectContaining({ analytics_storage: 'granted' })
     )
   })
 

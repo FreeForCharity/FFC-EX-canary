@@ -54,8 +54,8 @@ export default function CookiePolicy() {
               Remember your cookie consent preferences
             </li>
             <li className="text-[14px] text-[#666] leading-[24px] font-[500]">
-              Understand how you use our website and analyze traffic (in the EEA, the UK, and
-              Switzerland, only after you consent — see Section 3.3)
+              Understand how you use our website and analyze traffic (only after you consent,
+              wherever you are — see Section 3.3)
             </li>
             <li className="text-[14px] text-[#666] leading-[24px] font-[500]">
               Improve our website and user experience
@@ -213,20 +213,22 @@ export default function CookiePolicy() {
               <strong>When we ask permission first</strong>
             </p>
             <p className="text-sm text-[#666] mb-2">
-              If you are in the European Economic Area, the United Kingdom, or Switzerland, Google
-              Analytics sets <strong>no cookies and collects no identifiers</strong> until you
-              accept. It still counts your visit in an aggregate, cookie-free way so we know how
-              many people used the site — that measurement cannot be tied back to you or to your
-              next visit.
+              We apply the strictest setting to everyone: no matter where in the world you are,
+              Google Analytics sets{' '}
+              <strong>
+                no analytics or advertising cookies and collects no identifiers from your device
+              </strong>{' '}
+              until you accept. It still counts your visit in an aggregate, cookie-free way so we
+              know how many people used the site — that measurement cannot be tied back to you or to
+              your next visit.
             </p>
             <p className="text-sm text-[#666] mb-2">
-              Everywhere else, Google Analytics cookies are set from your first visit. You can turn
+              There is no country in which analytics cookies are set before you choose. You can turn
               them off at any time using the Cookie Preferences link in our footer, and we will
               delete the cookies listed below when you do.
             </p>
             <p className="text-sm text-[#666] mb-2">
-              Which of these rules applies to your visit is determined by Google from your IP
-              address at the time of your visit; IP geolocation is approximate.
+              The same rule applies to every visitor, so nothing depends on where you are.
             </p>
             <p className="text-sm text-[#666]">
               <strong>Microsoft Clarity is different.</strong> It records how visitors move through
@@ -481,12 +483,11 @@ export default function CookiePolicy() {
           <p className="text-[14px] text-[#666] pb-[10px] leading-[24px] font-[500]">
             This site does not read or respond to the &quot;Do Not Track&quot; or Global Privacy
             Control browser signals. We do not sell or share personal information as defined by the
-            CCPA/CPRA, so there is nothing for those signals to opt out of. In the EEA, the UK, and
-            Switzerland, analytics cookies stay off until you opt in through the consent banner;
-            everywhere else they are set from your first visit, and you can turn them off at any
-            time via the Cookie Preferences link in the footer — we delete the cookies when you do.
-            Session recording (Microsoft Clarity) and marketing (Meta Pixel) never load without your
-            explicit opt-in, anywhere in the world.
+            CCPA/CPRA, so there is nothing for those signals to opt out of. Analytics cookies stay
+            off until you opt in through the consent banner, wherever you are, and you can turn them
+            off again at any time via the Cookie Preferences link in the footer — we delete the
+            cookies when you do. Session recording (Microsoft Clarity) and marketing (Meta Pixel)
+            never load without your explicit opt-in, anywhere in the world.
           </p>
 
           {/* Section 6 */}
