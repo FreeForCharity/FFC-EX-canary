@@ -23,8 +23,13 @@
 //   - Before consent, anywhere → analytics_storage and every ad signal are
 //                                denied. GA4 sends COOKIELESS pings, so
 //                                pageviews are modeled in aggregate rather
-//                                than lost, and no identifier is set or
-//                                read.
+//                                than lost, and no analytics or advertising
+//                                identifier is set on, or read from, the
+//                                device. Not "no identifier at all":
+//                                functionality_storage and
+//                                security_storage stay granted, and
+//                                url_passthrough carries a click id that is
+//                                already in the visitor's URL.
 //   - After an explicit accept → `consent update` flips storage to granted
 //                                and normal cookie-based measurement
 //                                begins.

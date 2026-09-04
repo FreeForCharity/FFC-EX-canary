@@ -79,6 +79,48 @@ describe('CookieConsent restore/load ordering', () => {
     )
   })
 
+  it('pushes the stored GRANT consent update BEFORE injecting the GA script', async () => {
+    // This is the case the file docstring describes, and until now nothing
+    // exercised it: the denial case above was written when the default was
+    // permissive, where a stored DENIAL arriving late meant a cookie-based
+    // hit. Under a denied-by-default model the exposure is the mirror image
+    // — a returning visitor who ACCEPTED has their opening hit go out
+    // cookieless if GA is injected before their stored grant reaches the
+    // queue. Both orderings are worth locking, but only this one matches the
+    // risk the docstring claims to cover.
+    const gaPresentAtUpdate: boolean[] = []
+    const gtagMock = jest.fn((...args: unknown[]) => {
+      if (args[0] === 'consent' && args[1] === 'update') {
+        gaPresentAtUpdate.push(document.querySelector(GA_SCRIPT_SELECTOR) !== null)
+      }
+    })
+    window.gtag = gtagMock
+
+    // Returning visitor who previously ACCEPTED analytics.
+    window.localStorage.setItem(
+      'cookie-consent',
+      JSON.stringify({ necessary: true, functional: true, analytics: true, marketing: false })
+    )
+
+    render(<CookieConsent />)
+
+    await waitFor(() => {
+      expect(document.querySelector(GA_SCRIPT_SELECTOR)).not.toBeNull()
+    })
+
+    // Every consent update fired while GA was NOT yet injected, so the stored
+    // grant is on the queue ahead of the tag's config and the opening hit is
+    // cookie-based rather than cookieless.
+    expect(gaPresentAtUpdate.length).toBeGreaterThanOrEqual(1)
+    expect(gaPresentAtUpdate.every((gaWasPresent) => gaWasPresent === false)).toBe(true)
+
+    expect(gtagMock).toHaveBeenCalledWith(
+      'consent',
+      'update',
+      expect.objectContaining({ analytics_storage: 'granted' })
+    )
+  })
+
   it('queues the Consent Mode update BEFORE the custom consent_update event', async () => {
     // In production both writes reach the same dataLayer queue and GTM
     // processes it in order, so a container trigger keyed on `consent_update`
