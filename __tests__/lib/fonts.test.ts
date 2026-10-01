@@ -1,5 +1,7 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 // Mock next/font/local so it echoes the call's configuration back out.
 // next/jest's default mock returns literal "variable", which strips the
@@ -139,45 +141,55 @@ describe('no Google-hosted fonts', () => {
   // Same rule as check:drift's googleFontFindings: an import, re-export, dynamic
   // import or require of the module counts; naming it in a comment does not
   // (src/lib/fonts.ts explains in a comment why it is banned).
-  const NEXT_FONT_GOOGLE =
-    /\b(?:from|import|require)\s*\(?\s*(?:\/\*[^*]*\*+(?:[^/*][^*]*\*+)*\/\s*)*(['"])next\/font\/google(?:\/[^'"]*)?\1/g
-  // Same scan as check:drift's commentSpans: one pass that tracks strings and
-  // url(...), so a `//` or `/*` inside a string is not a comment. '...' and
-  // "..." strings end at a line break, as in JS.
-  const commentSpans = (body: string) => {
-    const spans: Array<[number, number]> = []
-    let i = 0
-    while (i < body.length) {
-      const ch = body[i]
-      if (ch === '"' || ch === "'" || ch === '`') {
-        i++
-        while (i < body.length && body[i] !== ch && (ch === '`' || body[i] !== '\n')) {
-          i += body[i] === '\\' ? 2 : 1
-        }
-        i++
-      } else if (/^url\(/i.test(body.slice(i, i + 4))) {
-        const end = body.indexOf(')', i)
-        i = end === -1 ? body.length : end + 1
-      } else if (ch === '/' && (body[i + 1] === '*' || body[i + 1] === '/')) {
-        const end = body[i + 1] === '*' ? body.indexOf('*/', i + 2) : body.indexOf('\n', i)
-        const stop = end === -1 ? body.length : body[i + 1] === '*' ? end + 2 : end
-        spans.push([i, stop])
-        i = stop
-      } else i++
-    }
-    return spans
+  // Exercise the REAL detector that scripts/check-drift.mjs exports, not a copy
+  // of it. An earlier version of this test re-implemented the regex and the
+  // comment scanner here; that validated a duplicate, so a regression in the
+  // actual detector could not fail this test and the two copies could drift
+  // apart. The script is ESM and must stay outside the jest/ts transform, so it
+  // is imported in a child node process -- the same pattern
+  // __tests__/scripts/check-drift.test.ts uses for these pure detectors.
+  const DRIFT_SCRIPT = join(ROOT, 'scripts', 'check-drift.mjs')
+
+  type GoogleFontFinding = { path: string; line: number; label: string }
+
+  /** Runs the exported `googleFontFindings(files)` in a child node process. */
+  const findingsInChild = (files: { path: string; body: string }[]): GoogleFontFinding[] => {
+    const href = pathToFileURL(DRIFT_SCRIPT).href
+    // The payload goes in on STDIN, not in argv: the whole of src/ as a
+    // command-line argument exceeds the OS limit and spawn fails with E2BIG.
+    const out = execFileSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `const m = await import(${JSON.stringify(href)});` +
+          `let s = '';` +
+          `for await (const c of process.stdin) s += c;` +
+          `process.stdout.write(JSON.stringify(m.googleFontFindings(JSON.parse(s))))`,
+      ],
+      { encoding: 'utf8', input: JSON.stringify(files), maxBuffer: 32 * 1024 * 1024 }
+    )
+    return JSON.parse(out) as GoogleFontFinding[]
   }
-  const inComment = (code: string, at: number) =>
-    commentSpans(code).some(([start, stop]) => at >= start && at < stop)
+
   const flagged = (code: string) =>
-    [...code.matchAll(NEXT_FONT_GOOGLE)].some((m) => !inComment(code, m.index ?? 0))
+    findingsInChild([{ path: 'src/probe.ts', body: code }]).length > 0
 
   it('never imports next/font/google anywhere under src/', () => {
-    const offenders = walk(SRC_DIR)
-      .filter((f) => /\.(tsx?|jsx?|mjs|cjs)$/.test(f))
-      .filter((f) => flagged(readFileSync(f, 'utf8')))
-      .map((f) => f.slice(ROOT.length + 1))
-    expect(offenders).toEqual([])
+    const files = walk(SRC_DIR)
+      .filter((f) => /\.(tsx?|jsx?|mjs|cjs|css)$/.test(f))
+      .map((f) => ({ path: f.slice(ROOT.length + 1), body: readFileSync(f, 'utf8') }))
+    expect(findingsInChild(files)).toEqual([])
+  })
+
+  it('the child harness really reaches the detector (a planted offender is caught)', () => {
+    // Guards the harness itself: if the child import silently failed and always
+    // returned [], the sweep above would pass on a repo full of offenders.
+    const planted = findingsInChild([
+      { path: 'src/planted.ts', body: "import { Lato } from 'next/font/google'" },
+    ])
+    expect(planted).toHaveLength(1)
+    expect(planted[0]).toMatchObject({ path: 'src/planted.ts', label: 'a next/font/google import' })
   })
 
   it('applies that rule to imports but not to comments', () => {
