@@ -29,7 +29,7 @@ The script refuses to write a file whose cmap coverage differs from the source,
 and for a variable font refuses if the fvar axes or their ranges change -- a
 silent coverage loss would show up as missing glyphs on a live site.
 """
-import subprocess, sys, tempfile, pathlib
+import os, subprocess, sys, tempfile, pathlib
 from fontTools.ttLib import TTFont
 
 src = pathlib.Path(sys.argv[1])
@@ -45,7 +45,13 @@ cmd = ['pyftsubset', str(src), '--unicodes-file=' + ranges, '--no-hinting',
 # keep variation axes intact for variable fonts
 if 'fvar' in font:
     cmd.append('--retain-gids')
-subprocess.run(cmd, check=True, capture_output=True)
+try:
+    subprocess.run(cmd, check=True, capture_output=True)
+finally:
+    # delete=False is required so pyftsubset (a separate process) can open the
+    # file on every platform, so the cleanup is ours to do -- and it has to run
+    # even when pyftsubset fails, or a failed batch leaves a temp file per font.
+    os.unlink(ranges)
 out = TTFont(str(dst))
 assert sorted(out.getBestCmap()) == codes, 'COVERAGE CHANGED - refusing'
 if 'fvar' in font:
