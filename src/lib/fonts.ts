@@ -22,6 +22,16 @@ import localFont from 'next/font/local'
 // build must never depend on Google. `scripts/check-drift.mjs` rejects any
 // import of that loader, or any Google Fonts URL, under src/.
 //
+// The committed woff2 are the @fontsource 5.3.0 latin files with TrueType
+// hinting stripped (`scripts/strip-font-hinting.py`). @fontsource ships the
+// upstream HINTED builds, which carry per-glyph instruction bytecode plus
+// fpgm/prep/cvt -- about 66% extra bytes on Lato for identical glyph coverage.
+// Google's own woff2 are unhinted, so stripping it matches the files
+// next/font/google used to emit and keeps the render-blocking payload BELOW
+// what it was before this change (92,708 bytes vs 97,872). Browsers rasterize
+// with their own engines, so this is not a rendering regression. The script
+// refuses to write a file whose coverage or variable axes changed.
+//
 // next/font/local resolves `path` relative to THIS file, and every argument
 // must be a literal (the compiler reads it statically), so the sources are
 // spelled out rather than generated.
