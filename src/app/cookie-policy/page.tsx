@@ -225,9 +225,10 @@ export default function CookiePolicy() {
             </p>
             <p className="text-sm text-[#666] mb-2">
               Everywhere else, including the United States, the cookies listed below are set from
-              your first page view without a prompt, because no law there requires us to ask first.
-              Advertising data is also shared with Google in those regions to measure our Google Ad
-              Grants search ads — you can stop that with the{' '}
+              your first page view without requiring your prior opt-in, because no law there
+              requires us to ask first. The cookie banner is still shown, and declining turns them
+              off. Advertising data is also shared with Google in those regions to measure our
+              Google Ad Grants search ads — you can stop that with the{' '}
               <strong>Do Not Sell or Share My Personal Information</strong> link in our footer or by
               sending a Global Privacy Control signal.
             </p>

@@ -17,14 +17,20 @@ jest.mock('../../src/lib/analytics.config', () => {
 const GA_SCRIPT_SELECTOR = 'script[src*="googletagmanager.com/gtag"]'
 
 /**
- * Locks the fix for the returning-granter race: the Consent Mode default is
- * DENIED for every visitor, so if the GA tag were injected before the stored
- * choice is restored, a returning visitor who previously ACCEPTED analytics
- * would have their opening hit go out cookieless, before the grant reaches the
- * queue. The single default call does carry wait_for_update as a mitigation,
- * but that is a bounded grace window, not an ordering guarantee — the component
- * must still push the `consent update` BEFORE injecting GA on a stored-choice
- * restore.
+ * Locks the fix for the returning-visitor race, which exists in BOTH
+ * directions under the regional defaults — and the direction depends on where
+ * the visitor is, which is why naming only one kept making this comment wrong.
+ *
+ * Inside the EEA/UK/CH the default DENIES, so a returning visitor who
+ * previously ACCEPTED analytics has their opening hit go out cookieless if GA
+ * is injected before the stored grant is restored: a measurement loss.
+ * Everywhere else the unscoped default GRANTS, so a returning visitor who
+ * previously DECLINED has that hit go out WITH cookies: a privacy failure, and
+ * the worse of the two.
+ *
+ * Both defaults carry wait_for_update as a mitigation, but that is a bounded
+ * grace window, not an ordering guarantee — the component must still push the
+ * `consent update` BEFORE injecting GA on a stored-choice restore.
  */
 describe('CookieConsent restore/load ordering', () => {
   beforeEach(() => {

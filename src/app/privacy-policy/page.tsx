@@ -323,10 +323,11 @@ export default function PrivacyPolicy() {
             set no analytics or advertising cookies and read no identifiers from your device, and
             analytics counts your visit only in an aggregate, cookie-free way. Everywhere else —
             including the United States, where this charity operates — analytics cookies are set
-            from your first page view without a prompt, because no law there requires us to ask
-            first and the measurement is what tells us whether the site is working. Advertising data
-            is shared with Google in those regions too, for the Ad Grants search ads described in
-            the California section below, and you can stop that at any time with the{' '}
+            from your first page view without requiring your prior opt-in — the banner is still
+            shown, so you can decline — because no law there requires us to ask first and the
+            measurement is what tells us whether the site is working. Advertising data is shared
+            with Google in those regions too, for the Ad Grants search ads described in the
+            California section below, and you can stop that at any time with the{' '}
             <em>Do Not Sell or Share My Personal Information</em> link in the footer or by sending a
             Global Privacy Control signal. (Visitors in Switzerland are protected by
             Switzerland&apos;s Federal Act on Data Protection (FADP) rather than the GDPR; the
@@ -354,8 +355,9 @@ export default function PrivacyPolicy() {
             <li className="text-[14px] text-[#666] leading-[24px] font-[500]">
               <strong>Legitimate interests:</strong> Outside the EEA, the UK and Switzerland this is
               also the basis on which analytics cookies are set from your first page view, which is
-              why no prompt appears there. Operating, securing, and improving this website (for
-              example, essential cookies and server logs), balanced against your rights.
+              why your prior opt-in is not required there; the banner is still shown, so you can
+              decline. Operating, securing, and improving this website (for example, essential
+              cookies and server logs), balanced against your rights.
             </li>
             <li className="text-[14px] text-[#666] leading-[24px] font-[500]">
               <strong>Legal obligation:</strong> Where processing is required to comply with
