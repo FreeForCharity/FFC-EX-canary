@@ -3,7 +3,7 @@ import './globals.css'
 import Header from './../components/header'
 import Footer from './../components/footer'
 import CookieConsent from './../components/cookie-consent'
-import GoogleTagManager, { GoogleTagManagerNoScript } from './../components/google-tag-manager'
+import GoogleTagManager from './../components/google-tag-manager'
 import { siteConfig, siteUrl, twitterSite, cardDescription } from '@/lib/site.config'
 import { assetPath } from '@/lib/assetPath'
 import { openSans, lato, faustina } from '@/lib/fonts'
@@ -113,11 +113,17 @@ export default function RootLayout({
         />
 
         {/* Google Consent Mode v2 defaults — MUST run before any Google tag
-            (i.e. before the GoogleTagManager component below) so the
-            region-scoped defaults are already on the dataLayer when GTM/GA4
-            initialise.
-            Granted worldwide, denied (cookieless pings) only where Google's
-            EU User Consent Policy requires opt-in. See src/lib/consent-mode.ts. */}
+            (i.e. before the GoogleTagManager component below) so the consent
+            defaults are already on the dataLayer when GTM/GA4 initialise.
+            REGIONAL: two defaults, a region-scoped denial for the EEA, the UK
+            and Switzerland, then an unscoped default granting analytics and Ad
+            Grants conversion signals everywhere else. Google resolves the most
+            specific matching region from the visitor's IP. Advertising is
+            additionally denied in every region for a visitor sending Global
+            Privacy Control or using the footer opt-out, which the bootstrap
+            reads before the first default. This comment previously said
+            "denied worldwide ... no region left to resolve", which the
+            reversal made false. See src/lib/consent-mode.ts. */}
         <script dangerouslySetInnerHTML={{ __html: CONSENT_MODE_BOOTSTRAP }} />
         <GoogleTagManager />
       </head>
@@ -125,7 +131,11 @@ export default function RootLayout({
         className={['antialiased', openSans.variable, lato.variable, faustina.variable].join(' ')}
         suppressHydrationWarning={true}
       >
-        <GoogleTagManagerNoScript />
+        {/* The GTM <noscript> iframe used to render here and is deliberately
+            gone. With JavaScript off the consent bootstrap never runs, the
+            banner never renders and the footer opt-out does not exist, so that
+            iframe was the one Google request no visitor could refuse. Its
+            absence is asserted in tests/ so re-adding it fails CI. */}
         {/* Skip-to-content link (WCAG 2.4.1). First focusable element in the
             body so keyboard users tabbing in can jump past the header
             navigation. Visually hidden until focused — see .skip-to-content

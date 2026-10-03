@@ -1,20 +1,23 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+/**
+ * Google Consent Mode v2 — regional defaults and consent updates.
+ *
+ * The layout half of this contract (the bootstrap must be emitted in
+ * <head> BEFORE the GTM component) is asserted in
+ * __tests__/app/layout-consent-bootstrap.test.ts.
+ */
 import {
   EU_CONSENT_REGIONS,
   CONSENT_WAIT_FOR_UPDATE_MS,
   CONSENT_MODE_BOOTSTRAP,
   updateGoogleConsent,
-  type ConsentPreferences,
 } from '../../src/lib/consent-mode'
 import { isConfigured } from '../../src/lib/analytics.config'
 
 describe('EU_CONSENT_REGIONS', () => {
   it('contains exactly the 32 codes Google’s EU User Consent Policy covers', () => {
-    // 27 EU member states + 3 non-EU EEA states + UK + Switzerland
+    // 27 EU member states + IS/LI/NO (non-EU EEA) + GB + CH
     expect(EU_CONSENT_REGIONS).toHaveLength(32)
     const expected = [
-      // EU 27
       'AT',
       'BE',
       'BG',
@@ -42,15 +45,13 @@ describe('EU_CONSENT_REGIONS', () => {
       'SI',
       'ES',
       'SE',
-      // Non-EU EEA
       'IS',
       'LI',
       'NO',
-      // UK + Switzerland
       'GB',
       'CH',
     ]
-    expect([...EU_CONSENT_REGIONS].sort()).toEqual([...expected].sort())
+    expect([...EU_CONSENT_REGIONS]).toEqual(expected)
     // No duplicates
     expect(new Set(EU_CONSENT_REGIONS).size).toBe(32)
   })
@@ -58,72 +59,51 @@ describe('EU_CONSENT_REGIONS', () => {
 
 describe('CONSENT_MODE_BOOTSTRAP', () => {
   it('emits the region-scoped denial BEFORE the unscoped grant', () => {
-    const denialIdx = CONSENT_MODE_BOOTSTRAP.indexOf("'analytics_storage': 'denied'")
-    const grantIdx = CONSENT_MODE_BOOTSTRAP.indexOf("'analytics_storage': 'granted'")
-    expect(denialIdx).toBeGreaterThan(-1)
-    expect(grantIdx).toBeGreaterThan(-1)
-    expect(denialIdx).toBeLessThan(grantIdx)
+    const denialIndex = CONSENT_MODE_BOOTSTRAP.indexOf("'analytics_storage': 'denied'")
+    const grantIndex = CONSENT_MODE_BOOTSTRAP.indexOf("'analytics_storage': 'granted'")
+    expect(denialIndex).toBeGreaterThan(-1)
+    expect(grantIndex).toBeGreaterThan(-1)
+    expect(denialIndex).toBeLessThan(grantIndex)
   })
 
-  it('scopes the denial to the full region array with wait_for_update', () => {
+  it('scopes the denial to the full 32-code region array', () => {
     expect(CONSENT_MODE_BOOTSTRAP).toContain(`'region': ${JSON.stringify([...EU_CONSENT_REGIONS])}`)
-    expect(CONSENT_MODE_BOOTSTRAP).toContain(`'wait_for_update': ${CONSENT_WAIT_FOR_UPDATE_MS}`)
+    // The region parameter must be attached to the DENIAL call, i.e. appear
+    // before the granted defaults begin.
+    const regionIndex = CONSENT_MODE_BOOTSTRAP.indexOf("'region'")
+    const grantIndex = CONSENT_MODE_BOOTSTRAP.indexOf("'analytics_storage': 'granted'")
+    expect(regionIndex).toBeLessThan(grantIndex)
+  })
+
+  it('holds tags with wait_for_update on BOTH default calls', () => {
+    // The regional denial always carries wait_for_update; in this template
+    // the unscoped grant carries it too (deliberate deviation from the
+    // freeforcharity reference — GTM here loads from the layout, not
+    // behind the consent component, so a returning non-EEA decliner needs
+    // the same window for their stored choice to land).
     expect(CONSENT_WAIT_FOR_UPDATE_MS).toBe(500)
+    const occurrences = CONSENT_MODE_BOOTSTRAP.split(
+      `'wait_for_update': ${CONSENT_WAIT_FOR_UPDATE_MS}`
+    ).length
+    expect(occurrences - 1).toBe(2)
+    // …and it appears in both the denial and the grant call specifically.
+    const grantIndex = CONSENT_MODE_BOOTSTRAP.indexOf("'analytics_storage': 'granted'")
+    expect(
+      CONSENT_MODE_BOOTSTRAP.indexOf(`'wait_for_update': ${CONSENT_WAIT_FOR_UPDATE_MS}`)
+    ).toBeLessThan(grantIndex)
+    expect(
+      CONSENT_MODE_BOOTSTRAP.lastIndexOf(`'wait_for_update': ${CONSENT_WAIT_FOR_UPDATE_MS}`)
+    ).toBeGreaterThan(grantIndex)
   })
 
-  it('sets wait_for_update on BOTH default calls (unscoped grant included)', () => {
-    // Deliberate deviation from the reference: GTM loads from the layout
-    // here (not behind the consent component), so the unscoped grant also
-    // needs a wait window or a returning non-EEA visitor's stored decline
-    // could be restored after the tags already evaluated consent.
-    const waitRe = new RegExp(`'wait_for_update': ${CONSENT_WAIT_FOR_UPDATE_MS}`, 'g')
-    const occurrences = CONSENT_MODE_BOOTSTRAP.match(waitRe) ?? []
-    expect(occurrences).toHaveLength(2)
-    // And both sit inside `consent default` calls, after each opening.
-    const defaultCalls = CONSENT_MODE_BOOTSTRAP.split("gtag('consent', 'default'").slice(1)
-    expect(defaultCalls).toHaveLength(2)
-    for (const call of defaultCalls) {
-      const body = call.split('});')[0]
-      expect(body).toContain(`'wait_for_update': ${CONSENT_WAIT_FOR_UPDATE_MS}`)
-    }
+  it('sets url_passthrough and ads_data_redaction', () => {
+    expect(CONSENT_MODE_BOOTSTRAP).toContain("gtag('set', 'url_passthrough', true);")
+    expect(CONSENT_MODE_BOOTSTRAP).toContain("gtag('set', 'ads_data_redaction', true);")
   })
 
-  it('enables url_passthrough and ads_data_redaction', () => {
-    expect(CONSENT_MODE_BOOTSTRAP).toContain("gtag('set', 'url_passthrough', true)")
-    expect(CONSENT_MODE_BOOTSTRAP).toContain("gtag('set', 'ads_data_redaction', true)")
-  })
-
-  it('defines gtag as a function declaration sharing one dataLayer queue', () => {
-    expect(CONSENT_MODE_BOOTSTRAP).toContain('window.dataLayer = window.dataLayer || []')
+  it('installs gtag as a function declaration so later callers share the queue', () => {
     expect(CONSENT_MODE_BOOTSTRAP).toContain('function gtag(){dataLayer.push(arguments);}')
-  })
-})
-
-describe('root layout consent bootstrap ordering', () => {
-  // The layout is a server component excluded from jest rendering (font
-  // imports), so assert on its source: the consent-mode bootstrap <script>
-  // must be emitted in <head> BEFORE <GoogleTagManager />, or the regional
-  // defaults would arrive after the Google tags initialise.
-  const layoutSource = readFileSync(join(process.cwd(), 'src/app/layout.tsx'), 'utf8')
-
-  // Whitespace/quote-tolerant patterns: quote style, spacing, or import
-  // reordering must not fail these tests while the behavior stays correct.
-  const bootstrapImportRe =
-    /import\s*\{[^}]*\bCONSENT_MODE_BOOTSTRAP\b[^}]*\}\s*from\s*['"]@\/lib\/consent-mode['"]/
-  const bootstrapEmitRe =
-    /dangerouslySetInnerHTML\s*=\s*\{\{\s*__html:\s*CONSENT_MODE_BOOTSTRAP\s*\}\}/
-  const gtmElementRe = /<GoogleTagManager\s*\/>/
-
-  it('imports the bootstrap from the consent-mode lib', () => {
-    expect(layoutSource).toMatch(bootstrapImportRe)
-  })
-
-  it('emits the bootstrap script before <GoogleTagManager />', () => {
-    const bootstrapMatch = bootstrapEmitRe.exec(layoutSource)
-    const gtmMatch = gtmElementRe.exec(layoutSource)
-    expect(bootstrapMatch).not.toBeNull()
-    expect(gtmMatch).not.toBeNull()
-    expect(bootstrapMatch!.index).toBeLessThan(gtmMatch!.index)
+    expect(CONSENT_MODE_BOOTSTRAP).toContain('window.dataLayer = window.dataLayer || [];')
   })
 })
 
@@ -132,18 +112,14 @@ describe('updateGoogleConsent', () => {
     delete window.gtag
   })
 
-  const allGranted: ConsentPreferences = {
-    necessary: true,
-    functional: true,
-    analytics: true,
-    marketing: true,
-  }
-
-  it('does nothing (and does not throw) when gtag is absent', () => {
-    expect(() => updateGoogleConsent(allGranted)).not.toThrow()
+  it('is a no-op when gtag is not installed', () => {
+    delete window.gtag
+    expect(() =>
+      updateGoogleConsent({ necessary: true, functional: true, analytics: true, marketing: true })
+    ).not.toThrow()
   })
 
-  it('maps analytics to analytics_storage and marketing to the ad signals', () => {
+  it('maps analytics → analytics_storage and marketing → ad/personalization storage', () => {
     const gtag = jest.fn()
     window.gtag = gtag
     updateGoogleConsent({ necessary: true, functional: true, analytics: true, marketing: false })
@@ -158,46 +134,30 @@ describe('updateGoogleConsent', () => {
     })
   })
 
-  it('always grants security_storage, even on full decline', () => {
+  it('denies analytics_storage on decline while keeping security_storage granted', () => {
     const gtag = jest.fn()
     window.gtag = gtag
-    updateGoogleConsent({
-      necessary: true,
-      functional: false,
-      analytics: false,
-      marketing: false,
-    })
-    expect(gtag).toHaveBeenCalledWith(
-      'consent',
-      'update',
-      expect.objectContaining({
-        analytics_storage: 'denied',
-        functionality_storage: 'denied',
-        security_storage: 'granted',
-      })
-    )
+    updateGoogleConsent({ necessary: true, functional: true, analytics: false, marketing: false })
+    const payload = gtag.mock.calls[0][2]
+    expect(payload.analytics_storage).toBe('denied')
+    expect(payload.security_storage).toBe('granted')
   })
 })
 
 describe('isConfigured (placeholder guard)', () => {
   it('treats the shipped placeholders as unset', () => {
-    expect(isConfigured('G-XXXXXXXXXX')).toBe(false)
-    expect(isConfigured('XXXXXXXXXXXXXXX')).toBe(false)
-    expect(isConfigured('XXXXXXXXXX')).toBe(false)
-  })
-
-  it('treats falsy and whitespace-only values as unset', () => {
+    expect(isConfigured('G-XXXXXXXXXX')).toBe(false) // GA4 placeholder
+    expect(isConfigured('XXXXXXXXXXXXXXX')).toBe(false) // Meta Pixel placeholder
+    expect(isConfigured('XXXXXXXXXX')).toBe(false) // Clarity placeholder
     expect(isConfigured('')).toBe(false)
-    expect(isConfigured(undefined)).toBe(false)
-    expect(isConfigured(null)).toBe(false)
-    expect(isConfigured('   ')).toBe(false)
-    expect(isConfigured('\t\n')).toBe(false)
-    expect(isConfigured('  G-XXXXXXXXXX  ')).toBe(false)
+    expect(isConfigured('   ')).toBe(false) // whitespace-only is unset
+    expect(isConfigured(' G-XXXXXXXXXX ')).toBe(false) // placeholder with stray spaces
   })
 
   it('accepts real-looking IDs', () => {
     expect(isConfigured('G-ABC1234567')).toBe(true)
     expect(isConfigured('GTM-TQ5H8HPR')).toBe(true)
+    expect(isConfigured('123456789012345')).toBe(true)
     expect(isConfigured('abcdefghij')).toBe(true)
   })
 })

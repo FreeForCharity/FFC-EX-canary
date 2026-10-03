@@ -11,14 +11,19 @@ Google Tag Manager (GTM) is a tag management system that allows you to manage an
 ### Components
 
 1. **GoogleTagManager** - Main component that injects the GTM script into the page
-2. **GoogleTagManagerNoScript** - Fallback iframe for users with JavaScript disabled
+2. ~~**GoogleTagManagerNoScript**~~ - REMOVED. The `<noscript>` iframe was the one
+   tracking path consent could not reach: with JavaScript disabled the consent
+   bootstrap never runs, the banner never renders, and the opt-out control does
+   not exist, yet the iframe still requested the GTM container with no consent
+   signal. GA4 cannot run without JavaScript, so it measured almost nothing in
+   exchange. Do not reintroduce it.
 
 ### Features
 
 - ✅ Standard GTM implementation following Google's guidelines
 - ✅ Initializes `dataLayer` before GTM loads
 - ✅ Uses Next.js Script component with `afterInteractive` strategy
-- ✅ Includes noscript fallback for accessibility
+- ✅ No `<noscript>` iframe: the one GTM request a visitor could not refuse
 - ✅ Integrates with existing cookie consent system
 - ✅ GTM ID read from `src/lib/analytics.config.ts` (one place for all analytics IDs)
 
@@ -46,7 +51,7 @@ Replace the value with your actual GTM container ID from Google Tag Manager (e.g
 The component is automatically integrated into the root layout (`src/app/layout.tsx`):
 
 ```tsx
-import GoogleTagManager, { GoogleTagManagerNoScript } from './../components/GoogleTagManager'
+import GoogleTagManager from './../components/google-tag-manager'
 
 export default function RootLayout({ children }) {
   return (
@@ -55,7 +60,7 @@ export default function RootLayout({ children }) {
         <GoogleTagManager />
       </head>
       <body>
-        <GoogleTagManagerNoScript />
+        {/* No <noscript> iframe: see “No Noscript Fallback” below. */}
         {/* ... rest of body content */}
       </body>
     </html>
@@ -91,9 +96,34 @@ GTM works as a **functional script** and is always active. The existing `CookieC
 
 When users accept cookies, the `CookieConsent` component pushes a `consent_update` event to the dataLayer, which GTM can use to conditionally fire tags based on consent status.
 
-### 4. Noscript Fallback
+`marketing_consent` on that event is the **effective** advertising state, not
+the banner toggle. A visitor who accepted marketing and then opted out of
+sale/sharing — by the footer’s “Do Not Sell or Share” control, by a browser
+sending Global Privacy Control, or by this site being configured
+child-directed — publishes `marketing_consent: 'denied'`. Key marketing tags
+on this value rather than on your own copy of the banner choice; before this
+was the case, the event republished the raw preference and a container tag
+trusting it fired for an opted-out visitor.
 
-For users with JavaScript disabled, the component includes an iframe fallback that allows GTM to track basic page views.
+An opt-out made **during** a page pushes `{ marketing_consent: 'denied' }` with
+**no `event` key**. GTM merges dataLayer keys, so that corrects the variable
+without re-firing `consent_update` — which would re-trigger every tag keyed on
+that event and send a duplicate pageview from any whose conditions still hold.
+
+`analytics_consent` is deliberately **not** gated by the opt-out. It is an
+opt-out of sale/sharing for advertising, not a withdrawal of the first-party
+analytics consent the visitor gave.
+
+### 4. No Noscript Fallback
+
+There is deliberately no `<noscript>` iframe, and this section exists to say so
+rather than leave its removal looking like an oversight. With JavaScript
+disabled the Consent Mode bootstrap never runs, the cookie banner never
+renders and the “Do Not Sell or Share” control does not exist — yet the
+iframe would still request the GTM container carrying no consent signal,
+which made it the one Google request a visitor had no way to refuse. GA4
+cannot run without JavaScript, so it measured almost nothing in exchange.
+Its absence is asserted in the test suite, so re-adding it fails CI.
 
 ## Testing
 
@@ -108,7 +138,7 @@ Test coverage includes:
 
 - ✅ DataLayer initialization
 - ✅ GTM script loading
-- ✅ Noscript fallback presence
+- ✅ Absence of the `<noscript>` iframe (asserted, so re-adding it fails CI)
 - ✅ Event pushing to dataLayer
 - ✅ Cookie consent integration
 
@@ -186,7 +216,7 @@ The GTM implementation is optimized for performance:
 
 ### GTM Not Loading
 
-1. Verify the GTM ID in `src/components/GoogleTagManager/index.tsx` is correct
+1. Verify the GTM container id in `src/lib/analytics.config.ts` is correct
 
 2. Check GTM ID format (should be `GTM-XXXXXXX`)
 

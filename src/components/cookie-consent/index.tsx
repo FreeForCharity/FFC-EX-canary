@@ -3,7 +3,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { analyticsConfig, isConfigured } from '@/lib/analytics.config'
-import { updateGoogleConsent } from '@/lib/consent-mode'
+import {
+  updateGoogleConsent,
+  hasSaleShareOptOut,
+  SALE_SHARE_OPT_OUT_EVENT,
+} from '@/lib/consent-mode'
+import { scriptString } from '@/lib/script-string'
 
 // Tracking IDs live in src/lib/analytics.config.ts — edit them there.
 const GA_MEASUREMENT_ID = analyticsConfig.gaMeasurementId
@@ -16,35 +21,41 @@ interface DataLayerEvent {
   [key: string]: string | number | boolean | undefined
 }
 
+/**
+ * A dataLayer write that deliberately carries NO `event` key.
+ *
+ * GTM merges dataLayer keys, so a push without `event` updates the variables
+ * a container reads without firing any trigger. That is what the sale/share
+ * opt-out needs: it has to correct the published `marketing_consent` mid-page
+ * without re-firing `consent_update`, which would re-trigger every tag keyed
+ * on that event and send a duplicate pageview from any whose conditions still
+ * hold.
+ *
+ * `event?: never` rather than `event?: string`: this is not "an event where
+ * the name is optional", it is the other kind of write, and keeping them
+ * distinct is what stops a push that MEANT to name an event from compiling
+ * silently without one.
+ */
+interface DataLayerValues {
+  event?: never
+  [key: string]: string | number | boolean | undefined
+}
+
 // Extend Window interface to include dataLayer and openCookiePreferences
 declare global {
   interface Window {
-    dataLayer: DataLayerEvent[]
+    dataLayer: (DataLayerEvent | DataLayerValues)[]
     openCookiePreferences?: () => void
   }
 }
 
-/**
- * Serialises a value for embedding inside an inline `<script>` body.
- *
- * `JSON.stringify` supplies the surrounding quotes and escapes quotes and
- * newlines, but it does NOT escape `<` — so a value containing `</script>`
- * would still close the element early and let the remainder be parsed as
- * markup. Escaping `<` closes that. U+2028/U+2029 are escaped too: they are
- * legal inside a JSON string but were illegal in a JS string literal before
- * ES2019.
- *
- * The IDs these wrap are build-time values set by a maintainer, not by a
- * visitor, so this is defence in depth rather than a live hole. It matters
- * because `isConfigured()` only rejects placeholder values — it does not
- * validate shape, so nothing else checks what reaches the script body.
- */
-export function scriptString(value: string): string {
-  return JSON.stringify(value)
-    .replace(/</g, '\\u003c')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029')
-}
+// The scriptString helper used to be DEFINED here, and a second copy lived
+// in the GTM loader. One implementation now lives in src/lib/script-string.ts;
+// this module re-exports it so existing importers and its own test keep
+// working. Re-exported via import + export rather than
+// `export { x } from ...`, because that form creates no local binding and
+// this file calls scriptString itself further down.
+export { scriptString }
 
 interface CookiePreferences {
   necessary: boolean
@@ -179,6 +190,41 @@ export default function CookieConsent() {
     })
   }, [])
 
+  // Every advertising cookie this site can be left holding, expired in one
+  // place.
+  //
+  // Three call sites need this list -- the category deletion below, the
+  // restore path when there is no banner record, and the window event that
+  // carries an opt-out to tags that do not speak Consent Mode -- and each
+  // used to carry its own `['_fbp', 'fr']`. Copilot found the consequence:
+  // every copy was Meta's only, so an opt-out left Google's identifiers in
+  // place while the policy said advertising cookies had been deleted.
+  //
+  // GOOGLE'S ARE SWEPT BY PREFIX, not enumerated. Which of `_gcl_aw`,
+  // `_gcl_dc` and `_gcl_gb` exists depends on the click parameter that brought
+  // the visitor, and `_gac_<property-id>` depends on the property configured,
+  // so a hardcoded list goes stale without anything failing -- the same reason
+  // the `_ga_*` sweep further down exists. The cookie policy names the same
+  // families in prose.
+  const expireAdvertisingCookies = useCallback(() => {
+    // Meta's two only. `_gcl_au` was named here as well, and a mutation
+    // removing it was detected by nothing: the `_gcl_` prefix sweep below
+    // already catches that name, so the entry was redundant rather than
+    // untested. Removed instead of given a test that would assert the sweep
+    // twice. Meta's two stay named because neither prefix matches them.
+    const names = ['_fbp', 'fr']
+
+    if (typeof document !== 'undefined') {
+      const regex = /(?:^|;\s*)((?:_gcl_|_gac_)[^=;\s]*)/g
+      let match: RegExpExecArray | null
+      while ((match = regex.exec(document.cookie)) !== null) {
+        names.push(match[1])
+      }
+    }
+
+    expireCookies(names)
+  }, [expireCookies])
+
   // Expires the cookies of each category NOT granted in `prefs` — analytics
   // covers GA4 + Clarity, marketing covers the Meta Pixel. Called with no
   // argument it drops both.
@@ -189,13 +235,14 @@ export default function CookieConsent() {
   const deleteTrackingCookies = useCallback(
     (prefs?: CookiePreferences) => {
       const deleteAnalytics = !prefs || !prefs.analytics
-      const deleteMarketing = !prefs || !prefs.marketing
+      // A sale/share opt-out (footer control, GPC, or a child-directed site)
+      // forces the marketing cookies out regardless of the banner's marketing
+      // toggle: it is a statutory right, and it outranks an earlier accept.
+      const deleteMarketing = !prefs || !prefs.marketing || hasSaleShareOptOut()
 
       // Static cookie names: GA4, Microsoft Clarity, Meta Pixel
-      expireCookies([
-        ...(deleteAnalytics ? ['_ga', '_gid', '_clck', '_clsk'] : []),
-        ...(deleteMarketing ? ['_fbp', 'fr'] : []),
-      ])
+      if (deleteAnalytics) expireCookies(['_ga', '_gid', '_clck', '_clsk'])
+      if (deleteMarketing) expireAdvertisingCookies()
 
       // Dynamically delete all cookies matching _ga_* (e.g., _ga_G-XXXXXXXXXX)
       if (deleteAnalytics && typeof document !== 'undefined') {
@@ -206,7 +253,7 @@ export default function CookieConsent() {
         expireCookies(dynamicNames)
       }
     },
-    [expireCookies]
+    [expireCookies, expireAdvertisingCookies]
   )
 
   const applyConsent = useCallback(
@@ -217,27 +264,44 @@ export default function CookieConsent() {
         typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : ''
       document.cookie = `cookie-consent=${encodeURIComponent(cookieValue)}; path=/; max-age=31536000; SameSite=Lax${secureFlag}`
 
-      // Delete each non-granted category's cookies on EVERY apply — not only
-      // on withdrawal of a stored grant. Under the regional Consent Mode
-      // defaults storage is GRANTED outside the EEA/UK/CH before any choice
-      // is made, so cookies can already exist the first time a visitor
-      // declines, and a restore from storage carries no previous state at
-      // all. Keying on the resulting preferences covers both.
-      if (!prefs.analytics || !prefs.marketing) {
+      // Delete each non-granted category's cookies on EVERY apply — not only on
+      // withdrawal of a stored grant. Storage was GRANTED outside the EEA/UK/CH
+      // under this site's earlier defaults, so cookies can already exist the
+      // first time a visitor declines, and a restore from storage carries no
+      // previous state at all. Keying on the resulting preferences covers both.
+      // `adsDenied` is in the CONDITION, not only inside
+      // deleteTrackingCookies, and that matters: an opted-out visitor whose
+      // stored choice is accept-everything has both categories granted, so
+      // without it this branch never runs and the Pixel keeps its cookies.
+      // The clause was first added inside the helper alone, where it was
+      // unreachable for exactly that visitor — a mutation run found it inert.
+      // The opt-out, read once for the value this apply publishes.
+      //
+      // It is NOT the only read: deleteTrackingCookies and the Meta loader
+      // below call hasSaleShareOptOut() themselves, and an earlier version of
+      // this comment claimed otherwise -- it said "ONE read for the whole
+      // apply" when there were four. What makes those reads safe is that the
+      // helper LATCHES an observed opt-out for the session, so a later read
+      // can never be less restrictive than this one; threading a snapshot
+      // through every call site would have had to be remembered at each new
+      // one. Reported by Copilot, who read the claim against the code.
+      const adsDenied = hasSaleShareOptOut()
+
+      if (!prefs.analytics || !prefs.marketing || adsDenied) {
         deleteTrackingCookies(prefs)
       }
 
-      // Push the Google Consent Mode `update` mirroring this choice. For an
-      // EEA/UK/CH visitor this is what lifts the regional denied default to
-      // granted; for everyone else it matters when they decline (storage
-      // flips to denied and GA4 falls back to cookieless pings).
+      // Push the Google Consent Mode `update` mirroring this choice. This is
+      // what lifts the denied-by-default state to granted for any visitor who
+      // accepts; for one who declines it pins storage to denied and GA4 stays
+      // on cookieless pings.
       //
       // Queued BEFORE the custom `consent_update` event pushed below: both
       // writes land in the same dataLayer queue and GTM processes it in order,
       // so a container trigger keyed on that event would otherwise evaluate
       // consent state before this choice had been applied. The ordering case
       // in this repo's test suite fails if the two are swapped.
-      updateGoogleConsent(prefs)
+      updateGoogleConsent(prefs, { adsDenied })
 
       // Push consent update to GTM dataLayer
       if (typeof window !== 'undefined') {
@@ -246,7 +310,20 @@ export default function CookieConsent() {
           event: 'consent_update',
           functional_consent: prefs.functional ? 'granted' : 'denied',
           analytics_consent: prefs.analytics ? 'granted' : 'denied',
-          marketing_consent: prefs.marketing ? 'granted' : 'denied',
+          // The EFFECTIVE state, not the raw preference. A sale/share opt-out
+          // -- footer control, GPC, or a child-directed site -- denies
+          // advertising regardless of what the banner's marketing toggle says,
+          // and this event is documented for container tags to key on. Until
+          // this read `prefs.marketing`, an opted-out visitor who had earlier
+          // accepted marketing had 'granted' republished on every pageview,
+          // and any GTM tag trusting it fired: the opt-out was honoured for
+          // Google tags via Consent Mode and discarded for everything else.
+          //
+          // `analytics_consent` is deliberately NOT gated the same way. The
+          // opt-out is of sale/sharing for advertising; first-party analytics
+          // is a separate choice the visitor still holds, and denying it here
+          // would withdraw consent they never withdrew.
+          marketing_consent: prefs.marketing && !adsDenied ? 'granted' : 'denied',
         })
       }
 
@@ -260,7 +337,13 @@ export default function CookieConsent() {
       if (prefs.analytics) {
         loadMicrosoftClarity()
       }
-      if (prefs.marketing) {
+      // The Pixel does NOT speak Consent Mode, so denying ad_storage does
+      // nothing to it. It has to be gated here, by hand, or the footer
+      // control would claim advertising sharing is off while Meta kept
+      // receiving PageView data on every later page. This is also what makes
+      // the child-directed guarantee true for non-Google tags:
+      // hasSaleShareOptOut() returns true whenever that knob is set.
+      if (prefs.marketing && !hasSaleShareOptOut()) {
         loadMetaPixel()
       }
     },
@@ -270,15 +353,61 @@ export default function CookieConsent() {
   // Helper to load preferences from localStorage and update state
   const loadPreferencesFromLocalStorage = useCallback(
     (showBannerIfMissing = true) => {
+      // A sale/share opt-out is a statutory right and does not depend on a
+      // banner record existing. Before this, a visitor sending GPC whose
+      // stored choice had been cleared -- or whose storage could not be read
+      // -- had Google's advertising signals denied by the bootstrap and kept
+      // the Meta Pixel's `_fbp`/`fr` cookies, because every missing-choice
+      // branch below returns without running any cleanup. The policy says an
+      // opt-out deletes those cookies, so it has to.
+      //
+      // At the top rather than in the branches: there are several ways to
+      // reach "no usable preferences" (no record, unparseable JSON, failed
+      // validation, storage throwing) and a fix placed in one of them is a
+      // fix the next one will not have. Expiring a cookie is idempotent, so
+      // doing it on the stored-choice path as well costs nothing.
+      //
+      // ANALYTICS COOKIES ARE NOT TOUCHED. This is an opt-out of sale and
+      // sharing for advertising, not a withdrawal of analytics consent.
+      if (hasSaleShareOptOut()) {
+        expireAdvertisingCookies()
+
+        // And publish the denial for container tags, from the first pageview.
+        //
+        // Before this, a visitor with no stored banner choice -- including
+        // every first visit to a child-directed site -- had nothing on the
+        // dataLayer for a GTM tag to key on until they touched the banner, so
+        // the only thing carrying the denial was Consent Mode, which a
+        // container tag need not speak. Reported by Copilot.
+        //
+        // No `event` key, as with the mid-page correction: GTM merges
+        // dataLayer keys, so the variable becomes available without firing a
+        // trigger on a page where no consent decision has been made.
+        if (typeof window !== 'undefined') {
+          window.dataLayer = window.dataLayer || []
+          window.dataLayer.push({ marketing_consent: 'denied' })
+        }
+      }
+
       try {
         const consent = localStorage.getItem('cookie-consent')
         if (!consent) {
           // No stored choice: the Consent Mode defaults set in the layout
-          // <head> govern, so the Google tag loads now (a first-time EEA
-          // visitor is measured cookielessly until they accept) and we ask.
+          // <head> govern, and WHICH default depends on the visitor. Inside
+          // the EEA/UK/CH the region-scoped call denies, so the tag loads and
+          // sends cookieless pings until they accept. Everywhere else the
+          // unscoped call grants analytics, so it uses cookies from this first
+          // pageview unless they decline. Either way we load the tag and ask.
+          //
+          // This comment said "a first-time visitor anywhere is measured
+          // cookielessly until they accept", which was the global model and is
+          // false outside those regions. Reported by Copilot.
+          //
           // Ordering matters — when a stored choice DOES exist, applyConsent
           // below pushes the consent update BEFORE loading GA, so a stored
-          // denial is on the queue ahead of the tag's first hit.
+          // denial is on the queue ahead of the tag's first hit. Under the
+          // regional defaults that protects a decliner outside the EEA (whose
+          // default grants) and a granter inside it (whose default denies).
           loadGoogleAnalytics()
           if (showBannerIfMissing) setShowBanner(true)
           return
@@ -320,7 +449,7 @@ export default function CookieConsent() {
         if (showBannerIfMissing) setShowBanner(true)
       }
     },
-    [applyConsent, loadGoogleAnalytics]
+    [applyConsent, expireAdvertisingCookies, loadGoogleAnalytics]
   )
 
   const handleCancelPreferences = useCallback(() => {
@@ -347,11 +476,42 @@ export default function CookieConsent() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadPreferencesFromLocalStorage(true)
 
+    // The footer's "Do Not Sell or Share" control reaches the non-Google tags
+    // through this event. Consent Mode governs Google only, so without it the
+    // control would deny ad_storage while the Meta Pixel carried on with the
+    // cookies it had already set.
+    //
+    // What this does NOT claim: a Pixel already executing in this page cannot
+    // be unloaded. Expiring its cookies and refusing to load it again is the
+    // most a client-side control can honestly do, and the policy text says so
+    // rather than promising more.
+    const onSaleShareOptOut = () => {
+      expireAdvertisingCookies()
+
+      // applyConsent published the pre-opt-out `marketing_consent`, and for an
+      // opt-out that happens DURING this page nothing republishes it: a GTM
+      // container reading that variable would go on seeing 'granted' until the
+      // next navigation re-ran applyConsent.
+      //
+      // Pushed with NO `event` key on purpose. GTM merges dataLayer keys, so
+      // this corrects the variable without firing a second `consent_update`.
+      // Re-firing it would re-trigger every tag keyed on that event, and any
+      // whose conditions still hold -- an analytics tag, for a visitor who
+      // consented to analytics -- would send a duplicate pageview. Fixing a
+      // privacy defect must not buy a measurement one.
+      if (typeof window !== 'undefined') {
+        window.dataLayer = window.dataLayer || []
+        window.dataLayer.push({ marketing_consent: 'denied' })
+      }
+    }
+    window.addEventListener(SALE_SHARE_OPT_OUT_EVENT, onSaleShareOptOut)
+
     // Cleanup function to remove the window method
     return () => {
       delete window.openCookiePreferences
+      window.removeEventListener(SALE_SHARE_OPT_OUT_EVENT, onSaleShareOptOut)
     }
-  }, [loadPreferencesFromLocalStorage])
+  }, [loadPreferencesFromLocalStorage, expireAdvertisingCookies])
 
   // Focus management for modal
   useEffect(() => {
