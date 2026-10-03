@@ -3,7 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { analyticsConfig, isConfigured } from '@/lib/analytics.config'
-import { updateGoogleConsent } from '@/lib/consent-mode'
+import {
+  updateGoogleConsent,
+  hasSaleShareOptOut,
+  SALE_SHARE_OPT_OUT_EVENT,
+} from '@/lib/consent-mode'
 import { scriptString } from '@/lib/script-string'
 
 // Tracking IDs live in src/lib/analytics.config.ts — edit them there.
@@ -176,7 +180,10 @@ export default function CookieConsent() {
   const deleteTrackingCookies = useCallback(
     (prefs?: CookiePreferences) => {
       const deleteAnalytics = !prefs || !prefs.analytics
-      const deleteMarketing = !prefs || !prefs.marketing
+      // A sale/share opt-out (footer control, GPC, or a child-directed site)
+      // forces the marketing cookies out regardless of the banner's marketing
+      // toggle: it is a statutory right, and it outranks an earlier accept.
+      const deleteMarketing = !prefs || !prefs.marketing || hasSaleShareOptOut()
 
       // Static cookie names: GA4, Microsoft Clarity, Meta Pixel
       expireCookies([
@@ -209,7 +216,13 @@ export default function CookieConsent() {
       // under this site's earlier defaults, so cookies can already exist the
       // first time a visitor declines, and a restore from storage carries no
       // previous state at all. Keying on the resulting preferences covers both.
-      if (!prefs.analytics || !prefs.marketing) {
+      // `hasSaleShareOptOut()` is in the CONDITION, not only inside
+      // deleteTrackingCookies, and that matters: an opted-out visitor whose
+      // stored choice is accept-everything has both categories granted, so
+      // without it this branch never runs and the Pixel keeps its cookies.
+      // The clause was first added inside the helper alone, where it was
+      // unreachable for exactly that visitor — a mutation run found it inert.
+      if (!prefs.analytics || !prefs.marketing || hasSaleShareOptOut()) {
         deleteTrackingCookies(prefs)
       }
 
@@ -246,7 +259,13 @@ export default function CookieConsent() {
       if (prefs.analytics) {
         loadMicrosoftClarity()
       }
-      if (prefs.marketing) {
+      // The Pixel does NOT speak Consent Mode, so denying ad_storage does
+      // nothing to it. It has to be gated here, by hand, or the footer
+      // control would claim advertising sharing is off while Meta kept
+      // receiving PageView data on every later page. This is also what makes
+      // the child-directed guarantee true for non-Google tags:
+      // hasSaleShareOptOut() returns true whenever that knob is set.
+      if (prefs.marketing && !hasSaleShareOptOut()) {
         loadMetaPixel()
       }
     },
@@ -333,11 +352,26 @@ export default function CookieConsent() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadPreferencesFromLocalStorage(true)
 
+    // The footer's "Do Not Sell or Share" control reaches the non-Google tags
+    // through this event. Consent Mode governs Google only, so without it the
+    // control would deny ad_storage while the Meta Pixel carried on with the
+    // cookies it had already set.
+    //
+    // What this does NOT claim: a Pixel already executing in this page cannot
+    // be unloaded. Expiring its cookies and refusing to load it again is the
+    // most a client-side control can honestly do, and the policy text says so
+    // rather than promising more.
+    const onSaleShareOptOut = () => {
+      expireCookies(['_fbp', 'fr'])
+    }
+    window.addEventListener(SALE_SHARE_OPT_OUT_EVENT, onSaleShareOptOut)
+
     // Cleanup function to remove the window method
     return () => {
       delete window.openCookiePreferences
+      window.removeEventListener(SALE_SHARE_OPT_OUT_EVENT, onSaleShareOptOut)
     }
-  }, [loadPreferencesFromLocalStorage])
+  }, [loadPreferencesFromLocalStorage, expireCookies])
 
   // Focus management for modal
   useEffect(() => {
