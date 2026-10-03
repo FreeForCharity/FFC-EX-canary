@@ -377,11 +377,21 @@ export default function CookieConsent() {
         const consent = localStorage.getItem('cookie-consent')
         if (!consent) {
           // No stored choice: the Consent Mode defaults set in the layout
-          // <head> govern, so the Google tag loads now (a first-time visitor
-          // anywhere is measured cookielessly until they accept) and we ask.
+          // <head> govern, and WHICH default depends on the visitor. Inside
+          // the EEA/UK/CH the region-scoped call denies, so the tag loads and
+          // sends cookieless pings until they accept. Everywhere else the
+          // unscoped call grants analytics, so it uses cookies from this first
+          // pageview unless they decline. Either way we load the tag and ask.
+          //
+          // This comment said "a first-time visitor anywhere is measured
+          // cookielessly until they accept", which was the global model and is
+          // false outside those regions. Reported by Copilot.
+          //
           // Ordering matters — when a stored choice DOES exist, applyConsent
           // below pushes the consent update BEFORE loading GA, so a stored
-          // denial is on the queue ahead of the tag's first hit.
+          // denial is on the queue ahead of the tag's first hit. Under the
+          // regional defaults that protects a decliner outside the EEA (whose
+          // default grants) and a granter inside it (whose default denies).
           loadGoogleAnalytics()
           if (showBannerIfMissing) setShowBanner(true)
           return
