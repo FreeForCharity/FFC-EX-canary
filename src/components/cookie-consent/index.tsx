@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { analyticsConfig, isConfigured } from '@/lib/analytics.config'
 import { updateGoogleConsent } from '@/lib/consent-mode'
+import { scriptString } from '@/lib/script-string'
 
 // Tracking IDs live in src/lib/analytics.config.ts — edit them there.
 const GA_MEASUREMENT_ID = analyticsConfig.gaMeasurementId
@@ -24,27 +25,13 @@ declare global {
   }
 }
 
-/**
- * Serialises a value for embedding inside an inline `<script>` body.
- *
- * `JSON.stringify` supplies the surrounding quotes and escapes quotes and
- * newlines, but it does NOT escape `<` — so a value containing `</script>`
- * would still close the element early and let the remainder be parsed as
- * markup. Escaping `<` closes that. U+2028/U+2029 are escaped too: they are
- * legal inside a JSON string but were illegal in a JS string literal before
- * ES2019.
- *
- * The IDs these wrap are build-time values set by a maintainer, not by a
- * visitor, so this is defence in depth rather than a live hole. It matters
- * because `isConfigured()` only rejects placeholder values — it does not
- * validate shape, so nothing else checks what reaches the script body.
- */
-export function scriptString(value: string): string {
-  return JSON.stringify(value)
-    .replace(/</g, '\\u003c')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029')
-}
+// The scriptString helper used to be DEFINED here, and a second copy lived
+// in the GTM loader. One implementation now lives in src/lib/script-string.ts;
+// this module re-exports it so existing importers and its own test keep
+// working. Re-exported via import + export rather than
+// `export { x } from ...`, because that form creates no local binding and
+// this file calls scriptString itself further down.
+export { scriptString }
 
 interface CookiePreferences {
   necessary: boolean

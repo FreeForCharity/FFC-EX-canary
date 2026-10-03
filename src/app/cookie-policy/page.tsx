@@ -213,8 +213,8 @@ export default function CookiePolicy() {
               <strong>When we ask permission first</strong>
             </p>
             <p className="text-sm text-[#666] mb-2">
-              We apply the strictest setting to everyone: no matter where in the world you are,
-              Google Analytics sets{' '}
+              Where you are decides this. In the European Economic Area, the United Kingdom and
+              Switzerland, Google Analytics sets{' '}
               <strong>
                 no analytics or advertising cookies and collects no identifiers from your device
               </strong>{' '}
@@ -223,12 +223,16 @@ export default function CookiePolicy() {
               your next visit.
             </p>
             <p className="text-sm text-[#666] mb-2">
-              There is no country in which analytics cookies are set before you choose. You can turn
-              them off at any time using the Cookie Preferences link in our footer, and we will
-              delete the cookies listed below when you do.
+              Everywhere else, including the United States, the cookies listed below are set from
+              your first page view without a prompt, because no law there requires us to ask first.
+              Advertising data is also shared with Google in those regions to measure our Google Ad
+              Grants search ads — you can stop that with the{' '}
+              <strong>Do Not Sell or Share My Personal Information</strong> link in our footer or by
+              sending a Global Privacy Control signal.
             </p>
             <p className="text-sm text-[#666] mb-2">
-              The same rule applies to every visitor, so nothing depends on where you are.
+              Wherever you are, you can turn analytics off at any time using the Cookie Preferences
+              link in our footer, and we will delete the cookies listed below when you do.
             </p>
             <p className="text-sm text-[#666]">
               <strong>Microsoft Clarity is different.</strong> It records how visitors move through
@@ -481,13 +485,19 @@ export default function CookiePolicy() {
             <strong>5. Do Not Track and Global Privacy Control</strong>
           </h2>
           <p className="text-[14px] text-[#666] pb-[10px] leading-[24px] font-[500]">
-            This site does not read or respond to the &quot;Do Not Track&quot; or Global Privacy
-            Control browser signals. We do not sell or share personal information as defined by the
-            CCPA/CPRA, so there is nothing for those signals to opt out of. Analytics cookies stay
-            off until you opt in through the consent banner, wherever you are, and you can turn them
-            off again at any time via the Cookie Preferences link in the footer — we delete the
-            cookies when you do. Session recording (Microsoft Clarity) and marketing (Meta Pixel)
-            never load without your explicit opt-in, anywhere in the world.
+            This site reads the Global Privacy Control (GPC) signal and treats it as an opt-out of
+            advertising data sharing. The check runs before any Google tag loads, so a browser
+            sending GPC never has advertising cookies set. We do share advertising data with Google
+            to measure our Google Ad Grants search ads, which California law may treat as
+            &ldquo;sharing&rdquo; for cross-context behavioral advertising, so there is a real
+            opt-out to exercise — GPC exercises it automatically, and so does the{' '}
+            <strong>Do Not Sell or Share My Personal Information</strong> link in the footer.
+            &quot;Do Not Track&quot; (DNT) is a separate, deprecated signal with no agreed meaning,
+            and we do not act on it. GPC opts you out of sale and sharing, not of basic analytics:
+            outside the EEA, the UK and Switzerland analytics cookies are set automatically, and you
+            can turn them off at any time via the Cookie Preferences link in the footer — we delete
+            the cookies when you do. Session recording (Microsoft Clarity) and marketing (Meta
+            Pixel) never load without your explicit opt-in, anywhere in the world.
           </p>
 
           {/* Section 6 */}
