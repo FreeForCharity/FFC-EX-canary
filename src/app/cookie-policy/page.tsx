@@ -54,8 +54,9 @@ export default function CookiePolicy() {
               Remember your cookie consent preferences
             </li>
             <li className="text-[14px] text-[#666] leading-[24px] font-[500]">
-              Understand how you use our website and analyze traffic (only after you consent,
-              wherever you are — see Section 3.3)
+              Understand how you use our website and analyze traffic (in the EEA, the UK and
+              Switzerland only after you consent; elsewhere from your first visit unless you decline
+              — see Section 3.3)
             </li>
             <li className="text-[14px] text-[#666] leading-[24px] font-[500]">
               Improve our website and user experience
