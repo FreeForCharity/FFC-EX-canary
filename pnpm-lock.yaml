@@ -9,10 +9,9 @@ overrides:
   uuid: '>=11.1.1'
   picomatch: '>=4.0.4'
   tmp: ^0.2.6
-  postcss: ^8.5.15
+  postcss: ^8.5.28
   sharp: ^0.35.5
   browserslist: ^4.28.7
-  postcss@<8.5.18: ^8.5.18
   nanoid: ^3.3.18
   source-map-js: ^1.2.2
   js-yaml@<4: ^3.15.2
@@ -38,8 +37,8 @@ importers:
         specifier: ^16.3.8
         version: 16.3.8(@babel/core@7.29.7)(@playwright/test@1.61.1)(@types/node@24.10.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       postcss:
-        specifier: ^8.5.18
-        version: 8.5.26
+        specifier: ^8.5.28
+        version: 8.5.28
       react:
         specifier: 19.2.7
         version: 19.2.7
@@ -3605,8 +3604,8 @@ packages:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
     engines: {node: '>= 0.4'}
 
-  postcss@8.5.26:
-    resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
+  postcss@8.5.28:
+    resolution: {integrity: sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==}
     engines: {node: ^10 || ^12 || >=14}
 
   prelude-ls@1.2.1:
@@ -5556,7 +5555,7 @@ snapshots:
       '@alloc/quick-lru': 5.2.0
       '@tailwindcss/node': 4.3.1
       '@tailwindcss/oxide': 4.3.1
-      postcss: 8.5.26
+      postcss: 8.5.28
       tailwindcss: 4.3.1
 
   '@testing-library/dom@10.4.1':
@@ -8215,7 +8214,7 @@ snapshots:
       '@swc/helpers': 0.5.23
       baseline-browser-mapping: 2.11.21
       caniuse-lite: 1.0.30001810
-      postcss: 8.5.26
+      postcss: 8.5.28
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
       styled-jsx: 5.1.6(@babel/core@7.29.7)(react@19.2.7)
@@ -8443,7 +8442,7 @@ snapshots:
 
   possible-typed-array-names@1.1.0: {}
 
-  postcss@8.5.26:
+  postcss@8.5.28:
     dependencies:
       nanoid: 3.3.18
       picocolors: 1.1.1
