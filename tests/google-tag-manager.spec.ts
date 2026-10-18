@@ -46,14 +46,57 @@ test.describe('Google Tag Manager Integration', () => {
     expect(scriptContent).toContain('dataLayer')
   })
 
-  test('should have GTM noscript fallback in body', async ({ page }) => {
+  test('must NOT ship the GTM noscript fallback', async ({ page }) => {
     await page.goto('/')
 
-    // Check for noscript iframe element
-    // We verify it exists in the HTML even though it won't render with JavaScript enabled
+    // Inverted deliberately. This test used to assert the iframe was present.
+    //
+    // The <noscript> iframe is the one tracking path consent cannot reach:
+    // with JavaScript disabled the consent bootstrap never runs, the banner
+    // never renders, and the footer's "Do Not Sell or Share" control does not
+    // exist -- but the iframe would still request the GTM container, carrying
+    // no consent signal, with no way for a GPC-sending visitor to stop it.
+    //
+    // Asserted by ABSENCE because re-adding it is a one-line edit that any
+    // presence-only suite would wave through, and the privacy policy's claim
+    // that the consent check runs before any Google tag loads would silently
+    // become false again.
     const pageContent = await page.content()
-    expect(pageContent).toContain('googletagmanager.com/ns.html')
-    expect(pageContent).toContain('noscript')
+    expect(pageContent).not.toContain('googletagmanager.com/ns.html')
+  })
+
+  test('emits the regional consent defaults before any Google tag', async ({ page }) => {
+    await page.goto('/')
+
+    // Asserted on the real page rather than on the exported constant: a
+    // lib-level check passes even if the layout stops emitting the bootstrap.
+    // The bootstrap <script> carries no id in this template, so it is found
+    // by content rather than by selector. Asserted non-empty first: a selector
+    // that matched nothing would make every assertion below vacuously pass.
+    const bootstrap = await page.evaluate(() => {
+      const el = Array.from(document.querySelectorAll('script')).find((s) =>
+        (s.textContent ?? '').includes("gtag('consent', 'default'")
+      )
+      return el?.textContent ?? ''
+    })
+    expect(bootstrap).not.toBe('')
+
+    // TWO defaults -- a region-scoped denial for the EEA/UK/CH, then an
+    // unscoped default for everyone else. Google resolves the most specific
+    // matching region, so order does not decide the outcome; specificity does.
+    expect(bootstrap.split("gtag('consent', 'default'").length - 1).toBe(2)
+    expect(bootstrap).toContain("'region'")
+    expect(bootstrap).toContain('"CH"')
+    expect(bootstrap).toContain("'analytics_storage': 'denied'")
+    expect(bootstrap).toContain("'analytics_storage': 'granted'")
+
+    // The GPC / stored-opt-out read has to reach the page: a bootstrap that
+    // lost it would still satisfy every assertion above.
+    expect(bootstrap).toContain('globalPrivacyControl')
+
+    // And personalised advertising stays off by default -- Ad Grants is
+    // search-only, so granting it would buy nothing.
+    expect(bootstrap).toContain("'ad_personalization': 'denied'")
   })
 
   test('should push events to dataLayer', async ({ page }) => {

@@ -10,6 +10,7 @@ import type { IconType } from 'react-icons'
 
 import { siteConfig } from '@/lib/site.config'
 import { assetPath } from '@/lib/assetPath'
+import { SaleShareOptOut } from '@/components/sale-share-opt-out'
 
 // Maps a social link's label (as defined in siteConfig.social) to an icon.
 // Unknown labels fall back to a generic link icon (FiLink2) so a charity
@@ -165,6 +166,15 @@ const Footer: React.FC = () => {
                   >
                     Cookie Preferences
                   </button>
+                </li>
+                <li>
+                  {/* "Do Not Sell or Share" is a statutory opt-out (CPRA, and
+                      the Colorado / Connecticut equivalents), distinct from the
+                      cookie banner: a visitor who accepted everything must
+                      still be able to exercise it. Required to be reachable
+                      from every page, which is why it lives here rather than
+                      only inside the preferences modal. */}
+                  <SaleShareOptOut className="hover:text-[#F58C23] hover:tracking-widest transition-all text-[16px] font-[500] text-left" />
                 </li>
               </ul>
             </nav>
