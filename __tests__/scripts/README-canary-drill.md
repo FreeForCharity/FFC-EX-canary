@@ -37,8 +37,11 @@ on every PR, not just once a quarter.
 | Donation capability lost     | `post-deploy-smoke.yml` · visual.js donation posture     |
 | Unrebranded template default | `post-deploy-smoke.yml` · visual.js failureMarkers       |
 
-The first four are the classes named in #755; the rest extend coverage to the
-other classes the engine claims.
+Footer, required-policy-link, Zeffy-404 and manifest-icon are the classes named
+in #755; the rest extend coverage to the other classes the engine claims. Named
+rather than numbered on purpose — this sentence read "the first four" until a
+later class was inserted mid-table, which silently made it describe the wrong
+rows.
 
 "Donation host 403s CI" is the inverse of the class above it, and the only one
 whose load-bearing leg is the **healthy** probe: a donation host behind bot
