@@ -741,6 +741,11 @@ jobs:
 
             // Evaluate compliance failures (unless placeholder mode).
             const complianceFailures = [];
+            // Observations that are neither a pass nor a failure -- today, a
+            // donation host that bot-challenges our automated GET. They never
+            // affect the exit code; they exist so an inconclusive result is
+            // visible in the log and the artifact instead of silently passing.
+            const complianceNotices = [];
             if (!placeholder) {
               if (!footer) {
                 complianceFailures.push('No <footer> or [role="contentinfo"] element found in rendered page');
@@ -776,13 +781,29 @@ jobs:
             if (isApex && !placeholder && donationSurfaces.length === 0 && donationScope !== 'none') {
               complianceFailures.push('No donation capability detected (no Zeffy, PayPal, or other donation provider found). Wire a Zeffy campaign, or declare {"donationScope": "none"} in .github/smoke.config.json (or set SMOKE_DONATION_SCOPE=none) only if this site intentionally takes no donations.');
             }
-            // Every surface must be reachable, whatever the provider.
+            // Every surface must be reachable, whatever the provider -- but a
+            // donation host behind bot management answers an automated GET with
+            // a challenge rather than with the form, and that status describes
+            // our client, not the charity's donation flow. Measured 2026-10-30:
+            // a real Chromium gets `403 "Attention Required! | Cloudflare"` on
+            // the Zeffy embed URL while `https://www.zeffy.com/` answers 200 in
+            // the same browser. Reading that 403 as breakage held canary's
+            // `main` red for 8 days.
+            //
+            // So a challenge status is INCONCLUSIVE: not a pass (it is recorded
+            // on the surface and printed as a notice, so it cannot hide) and
+            // not a failure. 404/410/5xx and a failed fetch stay real breakage,
+            // which is what the dead-donation-link class actually looks like.
+            const CHALLENGE_STATUSES = new Set([401, 403, 429]);
             for (const s of donationSurfaces) {
               if (s.kind === 'page') { donationChecks.push({ ...s, status: 200 }); continue; }
               try {
                 const r = await fetch(s.url.startsWith('http') ? s.url : 'https:' + s.url, { method: 'GET', redirect: 'follow' });
-                donationChecks.push({ ...s, status: r.status });
-                if (r.status >= 400) {
+                const challenged = CHALLENGE_STATUSES.has(r.status);
+                donationChecks.push({ ...s, status: r.status, ...(challenged ? { verdict: 'inconclusive-bot-challenge' } : {}) });
+                if (challenged) {
+                  complianceNotices.push(`${s.provider} donation ${s.kind} answered ${r.status} to an automated GET (bot challenge, not breakage): ${s.url}`);
+                } else if (r.status >= 400) {
                   complianceFailures.push(`${s.provider} donation ${s.kind} unreachable (${r.status}): ${s.url}`);
                 }
               } catch (e) {
@@ -806,6 +827,7 @@ jobs:
               cookieConsent: cookieConsent ? { selector: cookieConsent.selector, textSnippet: cookieConsent.text } : null,
               donations: { scope: donationScope || 'undeclared', surfaces: donationChecks },
               complianceFailures,
+              complianceNotices,
             };
             require('fs').writeFileSync(artifactsDir + '/visual-summary.json', JSON.stringify(summary, null, 2));
             console.log(JSON.stringify(summary, null, 2));
@@ -823,6 +845,9 @@ jobs:
             if (bodyText.trim().length < 50) {
               console.error(`::error::Visual: body text is only ${bodyText.length} chars — likely blank page`);
               process.exit(1);
+            }
+            for (const n of complianceNotices) {
+              console.log(`::notice::Compliance (inconclusive): ${n}`);
             }
             if (complianceFailures.length > 0) {
               for (const f of complianceFailures) {

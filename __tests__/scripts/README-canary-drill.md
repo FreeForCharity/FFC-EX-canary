@@ -31,13 +31,21 @@ on every PR, not just once a quarter.
 | Footer element removed       | `post-deploy-smoke.yml` · visual.js footer probe         |
 | Required policy link missing | `post-deploy-smoke.yml` · visual.js required-links check |
 | Zeffy link points at a 404   | `post-deploy-smoke.yml` · visual.js reachability loop    |
+| Donation host 403s CI        | `post-deploy-smoke.yml` · visual.js reachability loop    |
 | Manifest icon asset 404s     | `scripts/smoke-check.mjs` · manifest icon resolution     |
 | Cookie-consent missing       | `post-deploy-smoke.yml` · visual.js cookie-consent check |
 | Donation capability lost     | `post-deploy-smoke.yml` · visual.js donation posture     |
 | Unrebranded template default | `post-deploy-smoke.yml` · visual.js failureMarkers       |
 
-The first four are the classes named in #755; the last three extend coverage
-to the other classes the engine claims.
+The first four are the classes named in #755; the rest extend coverage to the
+other classes the engine claims.
+
+"Donation host 403s CI" is the inverse of the class above it, and the only one
+whose load-bearing leg is the **healthy** probe: a donation host behind bot
+management (Zeffy sits behind Cloudflare) answers an automated GET with a
+challenge, which says nothing about the charity's donation flow, so it must not
+red. Its broken leg uses `410 Gone` to pin the other half — a genuinely dead
+surface still has to fail, so the rule cannot decay into "any 4xx is fine".
 
 ## Run it
 
