@@ -105,9 +105,15 @@ export function evaluateCompliance(probe = {}, env = {}) {
       'No donation capability detected (no Zeffy, PayPal, or other donation provider found). Wire a Zeffy campaign, or set SMOKE_DONATION_SCOPE=none only if this site intentionally takes no donations.'
     )
   }
+  // Mirrors the engine's CHALLENGE_STATUSES split: a donation host behind bot
+  // management answers an automated GET with a challenge, which describes our
+  // client rather than the charity's donation flow, so it is inconclusive --
+  // never a compliance failure. 404/410/5xx stay real breakage.
+  const CHALLENGE_STATUSES = new Set([401, 403, 429])
   for (const s of donationSurfaces) {
     if (s.kind === 'page') continue
     const status = statusOf(s.url)
+    if (CHALLENGE_STATUSES.has(status)) continue
     if (status >= 400) {
       complianceFailures.push(`${s.provider} donation ${s.kind} unreachable (${status}): ${s.url}`)
     }
@@ -218,6 +224,28 @@ export const FAILURE_CLASSES = [
         // (arbitrary hosts can embed the string). Deterministic fixture, so
         // equality is both correct and clean.
         statusOf: (url) => (broken && url === ZEFFY_DONATE_URL ? 404 : 200),
+      }),
+  },
+  {
+    // Regression guard for the 8-day canary `main` outage of 2026-10-23..30
+    // (hub #1701): Zeffy's Cloudflare WAF answers the embed URL with
+    // `403 "Attention Required!"` for any automated client, and the engine
+    // read that as a dead donation surface. The HEALTHY leg is the one that
+    // carries this fix -- it was red before the CHALLENGE_STATUSES split and
+    // is clean after. The BROKEN leg pins the other half: a genuinely gone
+    // surface (410) must still red, so the fix cannot decay into "4xx is fine".
+    id: 'zeffy-waf-challenge-is-not-breakage',
+    label: 'Donation host bot-challenges CI (403) — inconclusive, not a failure',
+    engine: 'post-deploy-smoke.yml · visual.js donation reachability loop',
+    spec: 'const CHALLENGE_STATUSES = new Set([401, 403, 429]);',
+    specFile: 'workflow',
+    expect: 'zeffy donation link unreachable (410): https://www.zeffy.com/donate',
+    run: (broken) =>
+      evaluateCompliance({
+        footer: HEALTHY_FOOTER,
+        cookieConsent: true,
+        donationSurfaces: HEALTHY_ZEFFY,
+        statusOf: (url) => (url === ZEFFY_DONATE_URL ? (broken ? 410 : 403) : 200),
       }),
   },
   {
